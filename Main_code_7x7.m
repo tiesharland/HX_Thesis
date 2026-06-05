@@ -54,7 +54,7 @@ end
 
 ref_pressure = 101325; % Pa
 Lapse_rate = 0.0065; % K/m, lapse rate
-p11=22632; % Pa, constant value for calculation of pressure > 11km altitude
+p11 = 22632; % Pa, constant value for calculation of pressure > 11km altitude
 t11 = 216.65; % K, constant value for calculation of pressure > 11km altitude
 R = 287; % J/kg.K, gas constant
 gamma = 1.4;
@@ -62,7 +62,8 @@ hx_theta = 60; %hx inclination angle
 counter = 1; 
 
 
-fan = "OFF"; 
+fan = "OFF";
+disc = "ON";
 
 %% ----------------------------------MASS FLOW LEAKS---------------------------------------%%
 
@@ -109,12 +110,13 @@ end
 
 
 delta_T = T_out_fc-T_in_fc;
-M_dot_coolant_max = 44.4; %UPDATED VALUES FROM SAM on 29/01/2626; kg/s; from excel sheet "02. Air parameters TUD June 2025 to share - issue A" 
+M_dot_coolant_max = 44.4; %UPDATED VALUES FROM SAM on 29/01/2026; kg/s; from excel sheet "02. Air parameters TUD June 2025 to share - issue A" 
 M_dot_coolant_min = 29; %kg/s; from excel sheet "02. Air parameters TUD June 2025 to share - issue A" 
+M_dot_coolant = M_dot_coolant_max;
 
 %%%---------------------------------------- Mean temperature calculations -----------------------------------------------%%%
 
-[T_mean_h, T_mean_c, T_c_i, T_c_o, T_h_i, T_h_o, C_h, C_c, C_star] = HX_deltaT (T3, M_dot_3, M_dot_coolant_max,T_out_fc,T_in_fc);
+[T_mean_h, T_mean_c, T_c_i, T_c_o, T_h_i, T_h_o, C_h, C_c, C_star] = HX_deltaT (T3, M_dot_3, M_dot_coolant,T_out_fc,T_in_fc);
 
 %%%--------------------------------------- Prandtl number calculations --------------------------------------------------%%%
 
@@ -125,7 +127,7 @@ Pr_air = mu_air(T_mean_c)*cp_air(T_mean_c)/k_air(T_mean_c);
 x=1;
 e = 9; %this is a multiplier fed into HX sizing function to indicate air-side fin size (1 = 1mm)
 r = 4; %this is a multiplier fed into HX sizing function to indicate coolant-side fin size (1 = 1mm)
-[dp_coolant,d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, v_channel_air, v_channel_coolant,d_h_coolant, A_o_coolant, A_o_air, Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX] = HX_design1(e,r,hx_theta, counter, x ,A3,v3, R,P3,P3_0, h, d3, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant_max, M_dot_3, T3);         
+[dp_coolant,d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, v_channel_air, v_channel_coolant,d_h_coolant, A_o_coolant, A_o_air, Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, Q_pred_sol, T_cool_out] = HX_design1(e,r,hx_theta, counter, x ,A3,v3, R,P3,P3_0, h, d3, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant, M_dot_3, T3);         
 coolant_pres_drop(i,j) = dp_coolant;
 HX_dp (i,j) = dp_hx;
 
@@ -149,11 +151,14 @@ AR_noz = 0.33; % Nozzle area ratio
 
 %% ----------------------------------------------- Pressure difference correction ----------------------------------------------%%
 
-[P1,P2,P3,P4,P5,P6,P1_0,P2_0,P3_0,P4_0,P5_0,P6_0, M1, M2, M3, M4, M5, M6,  v1,v2,v3,v4,v5,v6, T1, T1_0, T2, T2_0, T3,T3_0,T4, T4_0, T5, T5_0, T6, T6_0, M_dot_2, M_dot_3, M_dot_4, M_dot_6,P_shaft, M_hx, dp_coolant] = pressure_eq_mDot_adjust_9thJan_noExhaust(e,r,m_dot_streamtube, fan, M_dot_des, FPR_des, hx_theta,fpr_init, M_dot_in, flight_phase, theta_max_diff,d3,M_dot_FOD, M_dot_comp,counter, A2_init, d2_init,AR_noz, dp_tot_prop, P1,P_inf, P_inf_tot, T_inf, V_inf, Rho_inf, AR_init, a_inf, Gamma_inf, flag, mu_inf,A2,v2, M2, R,P2,P2_0,h,d2,T2_0, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant_max, M_dot_2, M_dot_3, T2,P3,P3_0,T3,T3_0,v3,M3,A4,P4,P4_0, T4, T4_0, v4, M4,P5,P5_0,M5,T5,T5_0,v5,P6,P6_0,M6,T6,T6_0,v6, M1, T1, T1_0, Rho_1, v1, P1_0, dia_prop);                 
+% Without HX_deltaT in iteration
+[P1,P2,P3,P4,P5,P6,P1_0,P2_0,P3_0,P4_0,P5_0,P6_0, M1, M2, M3, M4, M5, M6,  v1,v2,v3,v4,v5,v6, T1, T1_0, T2, T2_0, T3,T3_0,T4, T4_0, T5, T5_0, T6, T6_0, M_dot_2, M_dot_3, M_dot_4, M_dot_6,P_shaft, M_hx, dp_coolant, L_solution, Q_pred_sol, T_cool_out, dp_hx, drag_HX] = pressure_eq_mDot_adjust_9thJan_noExhaust(e,r,m_dot_streamtube, fan, M_dot_des, FPR_des, hx_theta,fpr_init, M_dot_in, flight_phase, theta_max_diff,d3,M_dot_FOD, M_dot_comp,counter, A2_init, d2_init,AR_noz, dp_tot_prop, P1,P_inf, P_inf_tot, T_inf, V_inf, Rho_inf, AR_init, a_inf, Gamma_inf, flag, mu_inf,A2,v2, M2, R,P2,P2_0,h,d2,T2_0, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant, M_dot_2, M_dot_3, T2,P3,P3_0,T3,T3_0,v3,M3,A4,P4,P4_0, T4, T4_0, v4, M4,P5,P5_0,M5,T5,T5_0,v5,P6,P6_0,M6,T6,T6_0,v6, M1, T1, T1_0, Rho_1, v1, P1_0, dia_prop);
+% % With HX_deltaT in iteration
+% [P1,P2,P3,P4,P5,P6,P1_0,P2_0,P3_0,P4_0,P5_0,P6_0, M1, M2, M3, M4, M5, M6,  v1,v2,v3,v4,v5,v6, T1, T1_0, T2, T2_0, T3,T3_0,T4, T4_0, T5, T5_0, T6, T6_0, M_dot_2, M_dot_3, M_dot_4, M_dot_6,P_shaft, M_hx, dp_coolant] = pressure_iteration_deltaT(e,r,m_dot_streamtube, fan, M_dot_des, FPR_des, hx_theta,fpr_init, M_dot_in, flight_phase, theta_max_diff,d3,M_dot_FOD, M_dot_comp,counter, A2_init, d2_init,AR_noz, dp_tot_prop, P1,P_inf, P_inf_tot, T_inf, V_inf, Rho_inf, AR_init, a_inf, Gamma_inf, flag, mu_inf,A2,v2, M2, R,P2,P2_0,h,d2,T2_0, n_modules, Q_tot, Pr_air, Pr_coolant, T_out_fc,T_in_fc, M_dot_coolant, M_dot_2, M_dot_3, T2,P3,P3_0,T3,T3_0,v3,M3,A4,P4,P4_0, T4, T4_0, v4, M4,P5,P5_0,M5,T5,T5_0,v5,P6,P6_0,M6,T6,T6_0,v6, M1, T1, T1_0, Rho_1, v1, P1_0, dia_prop);                 
 
 %% ----------------------------------------------- State variables - Plot ----------------------------------------------%%
 
-plot1 (AR_init, AR_noz, fpr_init, P_inf, P1, P2, P3, P4, P5,P6, T_inf,T1, T2, T3, T4, T5, T6, P_inf_tot, P1_0, P2_0, P3_0, P4_0, P5_0, P6_0, V_inf, v1, v2, v3, v4, v5, v6, M_inf, M1, M2, M3, M4, M5, M6);
+plot1 (AR_init, AR_noz, fpr_init, P_inf, P1, P2, P3, P4, P5,P6, T_inf,T1, T2, T3, T4, T5, T6, P_inf_tot, P1_0, P2_0, P3_0, P4_0, P5_0, P6_0, V_inf, v1, v2, v3, v4, v5, v6, v_channel_air, M_inf, M1, M2, M3, M4, M5, M6);
 
 
 if fpr_init == 1

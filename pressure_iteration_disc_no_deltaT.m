@@ -1,0 +1,137 @@
+function [P1, P2, P3, P4, P5, P6, P1_0, P2_0, P3_0, P4_0, P5_0, P6_0, ...
+            M1, M2, M3, M4, M5, M6, v1, v2, v3, v4, v5, v6, ...
+            T1, T1_0, T2, T2_0, T3, T3_0, T4, T4_0, T5, T5_0, T6, T6_0, ...
+            M_dot_2, M_dot_3, M_dot_4, M_dot_6, P_shaft, M_hx, dp_coolant_loop, ...
+            T_air_seg, P_air_seg, v_air_seg, Re_air_seg, ...
+            f_air_seg, Nu_air_seg, h_air_seg, Q_seg_arr, dp_seg_arr] = ...
+            pressure_iteration_disc_no_deltaT(e, r, m_dot_streamtube, fan, hx_theta, fpr_init, M_dot_in, flight_phase, theta_max_diff, ...
+            d3, M_dot_FOD, M_dot_comp, counter, d2_init, AR_noz, P1, P_inf, T_inf, V_inf, Rho_inf, AR_init, ...
+            a_inf, Gamma_inf, flag, mu_inf, A2, v2, M2, R, P2, P2_0, ...
+            T2_0, n_modules, Q_tot, ...
+            M_dot_coolant_max, M_dot_2, M_dot_3, T2, P3, ...
+            P3_0, T3, T3_0, v3, M3, P4, P4_0, T4, T4_0, v4, M4, P5, P5_0, ...
+            M5, T5, T5_0, v5, P6, P6_0, M6, T6, T6_0, v6, M1, T1, T1_0, ...
+            v1, P1_0, T_out_fc, T_in_fc, N_segments, T_h_o, T_h_i, T_c_i, T_mean_h)
+
+% Pressure balance iteration for the discretised HX model.
+% Identical structure to pressure_eq_mDot_adjust_9thJan_noExhaust but
+% replaces HX_design1 with HX_design1_disc, and updates HX_deltaT inside
+% the loop so that T_mean_c and T_mean_h are consistent with the current
+% diffuser exit conditions at each iteration.
+
+p_loop = P_inf;
+diff_P = P6 - p_loop;
+fpr    = fpr_init;
+
+% Initialise segment arrays so they exist as outputs even if loop
+% converges immediately
+T_air_seg  = zeros(1, N_segments+1);
+P_air_seg  = zeros(1, N_segments+1);
+v_air_seg  = zeros(1, N_segments+1);
+Re_air_seg = zeros(1, N_segments+1);
+f_air_seg  = zeros(1, N_segments);
+Nu_air_seg = zeros(1, N_segments);
+h_air_seg  = zeros(1, N_segments);
+Q_seg_arr  = zeros(1, N_segments);
+dp_seg_arr = zeros(1, N_segments);
+
+while abs(diff_P) > 10
+
+    %--- Propeller ---%
+    [~, ~, ~, ~, ~, ~, ~, dp_tot_prop, ~, dia_prop, M1, P1, P1_0, T1, T1_0, ...
+     Rho_1, v1, ~] = propeller(flight_phase, V_inf, Rho_inf, P_inf, a_inf, ...
+                               T_inf, mu_inf);
+
+    %--- Diffuser ---%
+    [M3, P3, P3_0, A3, T3, T3_0, Rho_3, v3, M2, P2, P2_0, A2, T2, T2_0, ...
+     Rho_2, v2, L_diffuser, M_dot_2, M_dot_3, d2, d3, Re_2, Re_3] = ...
+        Diffuser_og_mine_for_7x7(M_dot_in, d3, M_dot_FOD, M_dot_comp, M1, ...
+        P1, P1_0, T1, T1_0, Rho_1, v1, R, theta_max_diff, d2_init, A2, ...
+        AR_init, a_inf, Gamma_inf, flag, mu_inf);
+
+    %--- Discretised HX ---%
+    [dp_coolant_loop, d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, ...
+        N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, ...
+        v_channel_air, v_channel_coolant, d_h_coolant, A_o_coolant, A_o_air, ...
+        Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, ...
+        M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, ...
+        T_air_seg, P_air_seg, v_air_seg, Re_air_seg, Pr_air_seg, ...
+        K_seg, f_air_seg, Nu_air_seg, h_air_seg, eta_fin_seg, ...
+        UA_seg_arr, NTU_seg_arr, eps_seg_arr, Q_seg_arr, dp_seg_arr] = ...
+    HX_design1_disc(e, r, hx_theta, counter, A3, v3, R, P3, ...
+    d3, T_h_o, n_modules, T_h_i, T_c_i, T_mean_h, ...
+    Q_tot, M_dot_coolant_max, M_dot_3, T3, N_segments);
+
+    % %--- Fan ---%
+    % if fan == "ON"
+    %     fpr_init = fan_fpr_simple(M_dot_4, M_dot_des, FPR_des);
+    % else
+    %     fpr_init = 1;
+    % end
+
+    fpr_init = 1;
+
+    [M5, T5_0, T5, P5, P5_0, v5, A5, dp_fan, P_shaft, M_dot_5] = ...
+        fan_backup(fpr_init, d3, P4, P4_0, T4, T4_0, v4, M4, A4, R, M_dot_4);
+
+    %--- Nozzle ---%
+    [A6, M6, L_nozzle, P6, P6_0, T6, T6_0, v6, M_dot_6, ~, d6, ~] = ...
+        nozzle_old(AR_noz, flag, d3, P5, P5_0, T5, T5_0, v5, M5, M_dot_4);
+
+    diff_P = P6 - p_loop;
+    fprintf("diff p = %f; m_dot_in = %f\n", diff_P, M_dot_in);
+
+    %--- Mass flow correction ---%
+    if diff_P < 0
+        if diff_P < -3000
+            M_dot_in = M_dot_in - (0.1*M_dot_3);
+        elseif diff_P > -3000 && diff_P < -1000
+            M_dot_in = M_dot_in - (0.01*M_dot_3);
+        elseif diff_P > -1000 && diff_P < -200
+            M_dot_in = M_dot_in - (0.005*M_dot_3);
+        else
+            M_dot_in = M_dot_in - (0.0005*M_dot_3);
+        end
+    elseif diff_P > 0
+        if diff_P > 1000
+            M_dot_in = M_dot_in + (0.01*M_dot_3);
+        elseif diff_P < 1000 && diff_P > 200
+            M_dot_in = M_dot_in + (0.005*M_dot_3);
+        else
+            M_dot_in = M_dot_in + (0.001*M_dot_3);
+        end
+    else
+        break
+    end
+
+    if fan == "OFF"
+        if M_dot_in > m_dot_streamtube
+            error("Mass flow rate into diffuser is not sufficient; Puller fan is needed;")
+        end
+    end
+
+    fprintf('P1 = %.2f, P6 = %.2f, diff_P = %.6e, m_dot = %f\n', ...
+            P1, P6, diff_P, M_dot_in);
+
+end
+
+fprintf("\n=== HX RESULTS ===\n");
+fprintf("HX length          = %.4f m\n",   L_solution);
+fprintf("HX pressure drop   = %.2f Pa\n",  dp_hx);
+fprintf("Air inlet temp     = %.2f K\n",   T_c_i);
+fprintf("Air outlet temp    = %.2f K\n",   T4);
+fprintf("Coolant inlet temp = %.2f K\n",   T_h_i);
+fprintf("Coolant outlet req = %.2f K\n",   T_h_o);
+fprintf("HX mass            = %.2f kg\n",  M_hx);
+fprintf("drag_HX = %.2f N\n",   drag_HX);
+fprintf("F_drag_hx = %.2f N\n",   F_drag_hx);
+fprintf("Nozzle exit P6     = %.2f Pa\n",  P6);
+fprintf("Ambient P_inf      = %.2f Pa\n",  P_inf);
+
+
+fprintf('Converged: |P6 - P_inf| = %.6e at P1 = %.2f\n', abs(diff_P), P1);
+
+% Recover remaining outputs not returned by HX_design1_disc
+M_dot_6 = M_dot_5;  % no internal leakage assumed
+
+end

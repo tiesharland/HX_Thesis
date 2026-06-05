@@ -1,4 +1,4 @@
-function [dp_coolant_loop,d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, v_channel_air, v_channel_coolant,d_h_coolant, A_o_coolant, A_o_air, Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, Q_pred_solution, T_cool_out] = HX_design1(e,r,hx_theta, counter, ~,A3,v3, R,P3,P3_0, h, d3, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant, M_dot_3, T3)
+function [dp_coolant_loop,d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, v_channel_air, v_channel_coolant,d_h_coolant, A_o_coolant, A_o_air, Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX] = HX_design1(e,r,hx_theta, counter, ~,A3,v3, R,P3,P3_0, h, d3, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant, M_dot_3, T3)
 
 %% Inputs %%
 
@@ -273,12 +273,8 @@ end
 
 L_solution = fzero(f_scalar, [L_low, L_high]);% solving for length of hx using a bissection scheme
 Q_pred_solution = Q_pred_L(L_solution);
-T_cool_out = T_h_i - Q_pred_solution/(m_dot_coolant * cp_EG_50_50(T_mean_h));
 fprintf("Effective length of HX is = %f\n",L_solution); %*cosd(hx_theta)
 %fprintf("Surface area = %f\n", A_ht_air*L_solution);
-fprintf("Predicted coolant outlet temperature = %.4f K\n", T_cool_out);
-fprintf("Required coolant outlet temperature  = %.4f K\n", T_h_o);
-fprintf("Deviation = %.4f K\n", T_cool_out - T_h_o);
  
  %% Calculation of dP across the HX %%
  
@@ -298,6 +294,7 @@ fprintf("Deviation = %.4f K\n", T_cool_out - T_h_o);
  d4 = d3;
 
  T4 = T_c_o;
+ T_cool_out = T_h_i - Q_pred_solution/(m_dot_cool_seg * cp_EG_50_50(T_mean_h));
  P4 = P3 - dp_hx;
  fprintf("P4 = %.2f\n",P4);
 

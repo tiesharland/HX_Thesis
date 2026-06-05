@@ -2,12 +2,15 @@
 
 %% READ VALUES FROM EXCEL SHEET %%
 
-D = readtable("C:\Users\prasannamuthuk\Downloads\propellerEfficiency.xlsx",'Sheet','D'); 
-J = readtable("C:\Users\prasannamuthuk\Downloads\propellerEfficiency.xlsx",'Sheet','J');
-Cp = readtable("C:\Users\prasannamuthuk\Downloads\propellerEfficiency.xlsx",'Sheet','CP');
-Ct = readtable("C:\Users\prasannamuthuk\Downloads\propellerEfficiency.xlsx",'Sheet','CT');
-eff_1 = readtable("C:\Users\prasannamuthuk\Downloads\propellerEfficiency.xlsx",'Sheet','efficiency_J_CP');
-eff_2 = readtable("C:\Users\prasannamuthuk\Downloads\propellerEfficiency.xlsx",'Sheet','efficiency_J_CT');
+path = 'C:\Users\tiesh\TUDelft\Thesis\HX_Thesis\';
+prop_eff_file = strcat(path, 'propellerEfficiency.xlsx');
+
+D = readtable(prop_eff_file,'Sheet','D'); 
+J = readtable(prop_eff_file,'Sheet','J');
+Cp = readtable(prop_eff_file,'Sheet','CP');
+Ct = readtable(prop_eff_file,'Sheet','CT');
+eff_1 = readtable(prop_eff_file,'Sheet','efficiency_J_CP');
+eff_2 = readtable(prop_eff_file,'Sheet','efficiency_J_CT');
 
 
 %% INPUTS %%
