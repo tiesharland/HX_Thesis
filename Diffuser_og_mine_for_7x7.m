@@ -16,8 +16,9 @@ function [M3, P3, P3_0, A3, T3, T3_0, Rho_3, v3, M2, P2, P2_0, A2, T2, T2_0, Rho
   % Computation of the ideal expansion thru a diffuser i.e no friction effects % 
   T2_0 = T1_0;
   T2 = T1;
-
-  P2_0 = P1_0*0.99; %assuming an inlet loss of 1 percent 
+  
+  inlet_loss = 0.01; % 0.01
+  P2_0 = P1_0*(1-inlet_loss); %assuming an inlet loss of 1 percent 
   %fprintf("M1 = %f\n",M1)
   
 

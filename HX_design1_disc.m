@@ -6,8 +6,9 @@ function [dp_coolant_loop, d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, ...
           T_air_seg, P_air_seg, v_air_seg, Re_air_seg, Pr_air_seg, v_channel_seg, ...
           K_seg, f_air_seg, Nu_seg_arr, h_air_seg, eta_fin_seg, ...
           UA_seg_arr, NTU_seg_arr, eps_seg_arr, Q_seg_arr, dp_seg_arr, ...
-          Q_pred_solution, T_h_o_solution] = ...
-          HX_design1_disc(e, r, hx_theta, counter, A3, v3, R, P3, ...
+          Q_pred_solution, T_h_o_solution, P_0_air_seg, T_0_air_seg, M_air_seg, f_hx_seg, inlet_dp, outlet_dp, ...
+          delta_BL_seg, A_free_seg, d_h_bulk_seg] = ...
+          HX_design1_disc(use_DNS, e, r, hx_theta, counter, A3, v3, R, P3, ...
           d3, T_h_o, n_modules, T_h_i, T_c_i, T_mean_h, ...
           Q_tot, M_dot_coolant, M_dot_3, T3, N_segments, tol_T)
 
@@ -83,11 +84,38 @@ A_f_air      = sqrt(ht_air^2+(b_t_air*0.5)^2) + ...
 
 R_cond_seg = t_plate/(k_fin_val*t_plate*(2*N_pass_tot+2)*b_hx);
 
+% Plates
+A_plates = (N_pass_tot + 2) * t_plate * b_hx;
+
+% Air fin solid material (fins between channels within each air passage)
+% Total air passage area minus open channel area, times number of passages
+A_one_air_pass = (ht_air + t_fin/sqrt(2)) * b_hx;  % approximate height of one air layer
+A_fins_air_solid = (A_one_air_pass - A_o_air*N_fin_air) * N_air_pass;
+
+% Coolant passage face area (seen end-on in frontal plane)
+% The entire coolant layer height times b_hx, minus nothing since
+% coolant open area is not in the air-flow direction
+A_coolant_layer = (ht_coolant + t_fin/sqrt(2)) * b_hx * N_coolant_pass;
+
+A_solid = A_plates + A_fins_air_solid + A_coolant_layer;
+A_solid_alt = A_frontal - A_o_air*N_fin_air*N_air_pass;
+
 
 %% ---- Inlet bulk reference (scalar outputs) ---- %%
 
 v_channel_air = (m_dot_pass_air/N_fin_air) / (rho_air(P3,T3)*A_o_air);
 Re_air        = rho_air(P3,T3)*v_channel_air*d_h_air / mu_air(T3);
+
+%% ---- Estimate Inlet pressure loss (Kays & London, 1960) ---- %%
+% - 0.5*rho_air(P4,T4)*v4^2
+% inlet_dp = (0.5*rho_air(P3,T3)*v3^2)*(A_solid_alt/A_frontal);
+
+sigma = A_o_air*N_fin_air*N_air_pass/A_frontal;
+fprintf('Sigma: %f\n', sigma)
+Kc = kays_london_triangular(sigma, Re_air, 'Kc', false);
+inlet_dp = v_channel_air^2 * rho_air(P3, T3) / 2 * (1 - sigma^2 + Kc);
+
+fprintf('Entrance pressure drop: %.2f Pa\n', inlet_dp)
 
 %% ---- Shared variables written by nested function ---- %%
 
@@ -103,13 +131,17 @@ UA_unit           = 0;
 
 % Node arrays: N_segments+1 points
 T_air_seg    = zeros(1, N_segments+1);
+T_0_air_seg  = zeros(1, N_segments+1);
 P_air_seg    = zeros(1, N_segments+1);
+P_0_air_seg  = zeros(1, N_segments+1);
 Re_air_seg   = zeros(1, N_segments+1);
 Pr_air_seg   = zeros(1, N_segments+1);
 f_air_seg    = zeros(1, N_segments+1);
 v_channel_seg    = zeros(1, N_segments+1);
 v_air_seg    = zeros(1, N_segments+1);
 rho_air_seg  = zeros(1, N_segments+1);
+M_air_seg    = zeros(1, N_segments+1);
+f_hx_seg     = zeros(1, N_segments+1);
 
 % Segment arrays: N_segments values
 K_seg        = zeros(1, N_segments);
@@ -124,6 +156,9 @@ eps_seg_arr  = zeros(1, N_segments);
 T_cool_out_arr = zeros(1, N_segments);
 v_cool_seg   = zeros(1, N_segments);
 dp_cool_seg  = zeros(1, N_segments);
+delta_BL_seg     = zeros(1, N_segments);
+A_free_seg       = zeros(1, N_segments);
+d_h_bulk_seg     = zeros(1, N_segments);
 
 %% ---- Nested: counter-flow effectiveness ---- %%
 
@@ -138,6 +173,7 @@ end
 
 %% ---- Nested: discretised Q prediction ---- %%
 
+
 function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
     % Air flows along L, discretised into N_segments equal slices of dx.
     % Coolant flows along b_hx perpendicular to air (cross-flow geometry).
@@ -148,33 +184,37 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
     dx  = L / N_segments;
 
     Q_total  = 0;
-    dp_total = 0;
+    dp_total = inlet_dp;
 
     tol_cool = 1e-4; % K
     max_cool = 50;
 
     %% ---- Initialise air inlet node and coolant ---- %%
+    
+    T_in = T3;
+    P_in = P3 - inlet_dp;
+    v_air_in = v3;
 
     T_cool_out = T3;
-    rho_in = rho_air(P3, T3);
-    v_channel_in = v3*A_frontal / (A_o_air * N_fin_air * N_air_pass)
-    v_channel_in = v3*A3 / (A_o_air * N_fin_air * N_air_pass)
-    v_channel_in = (m_dot_pass_air/N_fin_air) / (rho_in*A_o_air)
-    % v_channel_in = v3;
-    A_o_air * N_fin_air * N_air_pass
-    A3
-    Re_in = rho_air(P3, T3)*v_channel_in*d_h_air / mu_air(T3);
-    Pr_in = mu_air(T3)*cp_air(T3)/k_air(T3);
-    f_in = (1/(-2*log10(2.7*log10(Re_in)^1.2/Re_in+(sr/d_h_air)/3.71)))^2;
-    T_in = T3;
-    P_in = P3;
-    v_air_in = v3
+    rho_in = rho_air(P_in, T_in);
+    % v_channel_in = v3*A3 / (A_o_air * N_fin_air * N_air_pass)
+    v_channel_in = (m_dot_pass_air/N_fin_air) / (rho_in*A_o_air);
+    Re_in = rho_in*v_channel_in*d_h_air / mu_air(T_in);
+    Pr_in = mu_air(T_in)*cp_air(T_in)/k_air(T_in);
+    f_in = 0.25*((1.8*log10(Re_in))-1.5)^(-2); %Konakov et al as cited in Mortean et.al 2019
+    f_hx_in = (1/(-2*log10(2.7*log10(Re_in)^1.2/Re_in+(sr/d_h_air)/3.71)))^2;
+    M_in = v_channel_in/sqrt(gamma_air(cp_air(T_in))*R*T_in);
 
-    T_air_seg(1)   = T3;      P_air_seg(1)   = P3;
+    T_air_seg(1)   = T_in;      P_air_seg(1)   = P_in;
     v_channel_seg(1)   = v_channel_in;      Re_air_seg(1)  = Re_in;
     Pr_air_seg(1)  = Pr_in;     f_air_seg(1)   = f_in;     
-    v_air_seg(1)   = v3;        rho_air_seg(1) = rho_in;
+    v_air_seg(1)   = v_air_in;        rho_air_seg(1) = rho_in;
+    f_hx_seg(1)    = f_hx_in;
 
+    M_air_seg(1) = M_in;
+    P_0_air_seg(1) = P_in*((1+((gamma_air(cp_air(T_in))-1).*M_in.^2/2)).^ ...
+        ((gamma_air(cp_air(T_in)))./(gamma_air(cp_air(T_in))-1)));
+    T_0_air_seg(1) = T_in*(1+((gamma_air(cp_air(T_in))-1)*M_in.^2)/2);
 
     %% ---- Geometry ---- %%
 
@@ -239,22 +279,46 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
             C_h     = m_dot_cool_seg*cp_EG_50_50(T_mean_h_seg);
             C_min   = min(C_c, C_h);
             C_star  = C_min/max(C_c, C_h);
+            
+            % Boundary layer analysis
 
+            delta_BL = 0.37*dx*k/(rho_in*v_channel_in*dx*k/mu_air(T_in))^(0.2);
+            b_inner = max(0, b_t_air -2*sqrt(3)*delta_BL);
+            A_free = sqrt(3)/4 * b_inner^2;
+            
+
+            if A_free > 0
+                % d_h_bulk = 4 * (sqrt(3)/4*b_t_air^2 - A_free) / (3*b_inner + 3*b_t_air);
+                d_h_bulk = d_h_air;
+                % Re_bulk = rho_in*v_channel_in*d_bulk/mu_air(T_in);
+            else
+                % Re_bulk = Re_in;
+                d_h_bulk = d_h_air;
+            end
+
+            % fprintf('delta_BL: %f m, A_free: %f m^2, d_h_bulk: %f m\n', delta_BL, A_free, d_h_bulk)
 
             % Air-side heat transfer 
 
-            if Re_in < 2300
-                Nu_seg = 3.66;
-            elseif Re_in < 3000
-                w           = (Re_in-2300)/(3000-2300);
-                Nu_turb     = (f_in/2)*(Re_in-1000)*Pr_in* ...
-                              (1+(d_h_air/(dx*k))^(2/3))*K / ...
-                              (1+12.7*sqrt(f_in/2)*(Pr_in^(2/3)-1));
-                Nu_seg = (1-w)*3.66 + w*Nu_turb;
+            if use_DNS
+                % DNS lookup: Nu and Cf from thermoturb table
+                [~, Nu_seg, Cf_seg] = thermoturb_cached(Re_in, Pr_in, T_in, T_mean_h_seg);
+                f_out     = 4*Cf_seg;   % Fanning -> d_h-based
             else
-                Nu_seg     = (f_in/2)*(Re_in-1000)*Pr_in* ...
-                              (1+(d_h_air/(dx*k))^(2/3))*K / ...
-                              (1+12.7*sqrt(f_in/2)*(Pr_in^(2/3)-1));
+                % Use correlations for Nu and f_in
+                if Re_in < 2300
+                    Nu_seg = 3.66;
+                elseif Re_in < 3000
+                    w           = (Re_in-2300)/(3000-2300);
+                    Nu_turb     = (f_in/2)*(Re_in-1000)*Pr_in* ...
+                                  (1+(d_h_bulk/(dx*k))^(2/3))*K / ...
+                                  (1+12.7*sqrt(f_in/2)*(Pr_in^(2/3)-1));
+                    Nu_seg = (1-w)*3.66 + w*Nu_turb;
+                else
+                    Nu_seg     = (f_in/2)*(Re_in-1000)*Pr_in* ...
+                                  (1+(d_h_bulk/(dx*k))^(2/3))*K / ...
+                                  (1+12.7*sqrt(f_in/2)*(Pr_in^(2/3)-1));
+                end
             end
 
             h_air   = Nu_seg*k_air(T_in)/d_h_air;
@@ -269,7 +333,7 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
             eps     = epsilon_counterflow(NTU, C_star);
 
             Q_seg   = eps*C_min*(T_h_i - T_in);
-            dp_seg  = f_in*(dx/d_h_air)*0.5*rho_in*v_channel_in^2;
+            dp_seg  = f_hx_in*(dx/d_h_air)*0.5*rho_in*v_channel_in^2;
             % dp_seg  = f_in*(dx/d_h_air)*0.5*rho_in*v_air_in^2;
 
             % Outlet node conditions
@@ -282,10 +346,13 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
 
             rho_out = rho_air(P_out, T_out);
             v_channel_out = (m_dot_pass_air/N_fin_air) / (rho_out*A_o_air);
-            Re_out = rho_out*v_channel_out*d_h_air / mu_air(T_out);
+            Re_out = rho_out*v_channel_out*d_h_bulk / mu_air(T_out);
             % Re_out = rho_out*v_air_out*d_h_air / mu_air(T_out);
             Pr_out = mu_air(T_out)*cp_air(T_out)/k_air(T_out);
-            f_out = (1/(-2*log10(2.7*log10(Re_out)^1.2/Re_out+(sr/d_h_air)/3.71)))^2;
+            if ~use_DNS
+                f_out = 0.25*((1.8*log10(Re_out))-1.5)^(-2); %Konakov et al as cited in Mortean et.al 2019
+            end
+            f_hx_out = (1/(-2*log10(2.7*log10(Re_out)^1.2/Re_out+(sr/d_h_air)/3.71)))^2; % As cited in Gerl et. al 2025
 
 
             difference = T_cool_out - T_cool_out_old;
@@ -313,6 +380,9 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
         T_cool_out_arr(k) = T_cool_out;
         v_cool_seg(k)  = v_cool;
         dp_cool_seg(k)  = dp_cool;
+        delta_BL_seg(k) = delta_BL;
+        A_free_seg(k) = A_free;
+        d_h_bulk_seg(k) = d_h_bulk;
 
         % Compute and store outlet node at index k+1
 
@@ -320,6 +390,13 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
         v_channel_seg(k+1)   = v_channel_out;      Re_air_seg(k+1)  = Re_out;
         Pr_air_seg(k+1)  = Pr_out;     f_air_seg(k+1)   = f_out;
         v_air_seg(k+1)   = v_air_out;  rho_air_seg(k+1) = rho_out;
+        f_hx_seg(k+1)    = f_hx_out;
+
+        M_out = v_channel_out/sqrt(gamma_air(cp_air(T_out))*R*T_out);
+        M_air_seg(k+1) = M_out;
+        P_0_air_seg(k+1) = P_out*((1+((gamma_air(cp_air(T_out))-1).*M_out.^2/2)).^ ...
+            ((gamma_air(cp_air(T_out)))./(gamma_air(cp_air(T_out))-1)));
+        T_0_air_seg(k+1) = T_in*(1+((gamma_air(cp_air(T_in))-1)*M_out.^2)/2);
 
         % Update shared scalar outputs
         v_channel_coolant = v_cool;
@@ -333,6 +410,7 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
         Re_in = Re_out;
         Pr_in = Pr_out;
         f_in  = f_out;
+        f_hx_in = f_hx_out;
 
         Q_total  = Q_total  + Q_seg;
         dp_total = dp_total + dp_seg;
@@ -480,7 +558,7 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
 %     end
 
     T_c_o_disc = T_air_seg(end);
-    dp_hx_disc = dp_total;
+    dp_hx_disc = dp_total; %+ inlet_dp/2;
 
     fprintf("\nQ_total = %.2f W,  T_air_out = %.2f K\n", Q_total, T_air_seg(end));
 
@@ -529,7 +607,7 @@ while true
     T_close = abs(T_high - T_h_o) <= tol_T;
 
     if T_satisfied && Q_satisfied
-        % Case 1: both satisfied — prefer T_h_o residual
+        % Case 1: both satisfied — Solve for Q %%prefer T_h_o residual
         fprintf("Case 1: both constraints satisfied at L_high = %.4f m\n", L_high);
         break
 
@@ -539,7 +617,8 @@ while true
             fprintf('Case 2a: Q satisfied and T within tol_T at L_high = %.4f m\n', L_high);
             break
         else
-            fprintf('Case 2b: Q satisfied and T not within tol_T — increasing L_high\n');
+            fprintf('Case 2b: Q satisfied and T not within tol_T\n');
+            break
         end
         % fprintf("Case 2: Q satisfied but T_h_o not reached — solving on Q residual\n");
 
@@ -565,15 +644,19 @@ end
 
 if T_satisfied && Q_satisfied
     % Case 1: T_h_o constraint met — solve on T_h_o residual
-    % options    = optimset('TolFun', tol_L_iter);
-    T_residual = @(L) T_only(L) - T_h_o;
-    L_solution = fzero(T_residual, [L_low, L_high]);
-    fprintf("L solved on T_h_o residual: L = %.4f m\n", L_solution);
+    % % options    = optimset('TolFun', tol_L_iter);
+    % T_residual = @(L) T_only(L) - T_h_o;
+    % L_solution = fzero(T_residual, [L_low, L_high]);
+    % fprintf("L solved on T_h_o residual: L = %.4f m\n", L_solution);
+    Q_residual = @(L) Q_only(L) - Q_tot/n_modules;
+    L_solution = fzero(Q_residual, [L_low, L_high]);
+    fprintf("L solved on Q residual: L = %.4f m\n", L_solution);
 elseif T_close && Q_satisfied
-    % Case 2a: T within tolerance of T_h_o - solve on Q residual
+    % Case 2a: T within tolerance of T_h_o - solve on T_h_o + tol_T residual
     % T_residual = @(L) T_only(L) - (T_h_o + tol_T);
     % L_solution = fzero(T_residual, [L_low, L_high]);
     % fprintf("L solved on T_h_o + %.1f K residual: L = %.4f m\n", tol_T, L_solution);
+    % % % Case 2a: T within tolerance of T_h_o - solve on Q residual
     Q_residual = @(L) Q_only(L) - Q_tot/n_modules;
     L_solution = fzero(Q_residual, [L_low, L_high]);
     fprintf("L solved on Q residual: L = %.4f m\n", L_solution);
@@ -626,7 +709,18 @@ fprintf("Effective length of HX = %.4f m\n", L_solution);
 % 
 % Q_pred_L_disc(L_solution);
 
-dp_hx = dp_hx_disc;
+%% ---- Estimate Outlet pressure loss (Kays & London, 1960) ---- %%
+
+Ke = kays_london_triangular(sigma, Re_air_seg(end), 'Ke', false);
+outlet_dp = v_channel_seg(end)^2 * rho_air(P_air_seg(end), T_air_seg(end)) / 2 * (1 - sigma^2 - Ke);
+
+% outlet_dp = -inlet_dp/2;
+
+fprintf('Exit pressure rise: %.2f Pa\n', outlet_dp)
+
+
+dp_hx = dp_hx_disc - outlet_dp;
+% dp_hx_lump = (1/(-2*log10(2.7*log10(Re_out)^1.2/Re_out+(sr/d_h_air)/3.71)))^2;
 fprintf("Total pressure loss = %.2f Pa\n", dp_hx);
 
 %% ---- Exit state variables ---- %%
@@ -640,8 +734,7 @@ if P4 < 0
     error('HX is unfeasible; Check inputs');
 end
 
-v4      = m_dot_air/(pi*d3*d3*rho_air(P4,T4)/4)
-v_channel_seg(end)
+v4      = m_dot_air/(pi*d3*d3*rho_air(P4,T4)/4);
 a4      = sqrt(gamma_air(cp_air(T4))*R*T4);
 M4      = v4/a4;
 P4_0    = P4*((1+((gamma_air(cp_air(T4))-1).*M4.^2/2)).^ ...
@@ -688,5 +781,14 @@ f_coolant       = (1/(-1.8*log10((0.0015/d_h_coolant)^1.11 + (6.9/Re_coolant))))
 % dp_coolant_loop = f_coolant*b_hx*(0.5*1082*v_channel_coolant^2)/d_h_coolant;
 dp_coolant_loop = mean(dp_cool_seg);
 fprintf("Coolant side pressure loss = %.4f bar\n", dp_coolant_loop/1e5);
+
+% fprintf('\nPlate area: %.5f m^2, fin area: %.5f m^2, together: %.5f m^2\n', A_p_air, A_f_air, A_p_air + A_f_air);
+% fprintf('Solid area: %.5f m^2\n', A_solid);
+% fprintf('Open area: %.5f m^2, together: %.5f m^2\n', A_o_air*N_fin_air*N_air_pass, A_solid+A_o_air*N_fin_air*N_air_pass);
+% fprintf('Diffuser outlet area: %.5f m^2, HX inlet area: %.5f m^2\n', A3, A_frontal);
+% fprintf('Cross sectional area of core: %.5f m^2\n', V_core/L_solution)
+% % - 0.5*rho_air(P4,T4)*v4^2
+% inlet_dp = (0.5*rho_air(P3,T3)*v3^2)*(A_solid_alt/A_frontal);
+% fprintf('Estimate inlet bulk pressure loss: %.2f Pa\n\n', inlet_dp)
 
 end

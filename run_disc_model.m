@@ -1,6 +1,6 @@
 function results = run_disc_model(N_segments, e, r, hx_theta, fan, fpr_init, ...
     M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11, ...
-    d2_init, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, tol_T)
+    d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, tol_T)
 
 counter = 1;
 
@@ -22,7 +22,7 @@ M_inf     = V_inf/a_inf;
 %%%--- SHARED: DIFFUSER ---%%%
 
 A2             = pi*d2_init*d2_init/4;
-A_frontal_target = A2*4;
+A_frontal_target = A2*AR_diff;
 d3_target      = sqrt(A_frontal_target*4/pi);
 AR_diff_arr    = (d3_target/d2_init)^2;
 AR_init        = AR_diff_arr;
@@ -54,7 +54,7 @@ Pr_air     = mu_air(T_mean_c)*cp_air(T_mean_c)/k_air(T_mean_c);
           T_air_seg, P_air_seg, v_air_seg, Re_air_seg, Pr_air_seg, v_channel_seg, ...
           K_seg, f_air_seg, Nu_air_seg, h_air_seg, eta_fin_seg, ...
           UA_seg_arr, NTU_seg_arr, eps_seg_arr, Q_seg_arr, dp_seg_arr, ...
-          Q_pred_solution, T_h_o_solution] = ...
+          Q_pred_solution, T_h_o_solution, P_0_air_seg, T_0_air_seg, M_air_seg, f_hx_seg, inlet_dp] = ...
           HX_design1_disc(e, r, hx_theta, counter, A3, v3, R, P3, ...
           d3, T_h_o, n_modules, T_h_i, T_c_i, T_mean_h, ...
           Q_tot, M_dot_coolant, M_dot_3, T3, N_segments, tol_T);
@@ -68,7 +68,7 @@ fpr_init = 1; % fan OFF
 
 %%%--- NOZZLE ---%%%
 
-AR_noz = 0.33;
+% AR_noz = 0.33;
 [A6, M6, L_nozzle, P6, P6_0, T6, T6_0, v6, M_dot_6, Re_5, d6, mdot_choked] = ...
     nozzle_old(AR_noz, flag, d3, P5, P5_0, T5, T5_0, v5, M5, M_dot_4);
 
@@ -78,10 +78,11 @@ AR_noz = 0.33;
 [P1, P2, P3, P4, P5, P6, P1_0, P2_0, P3_0, P4_0, P5_0, P6_0, ...
  M1, M2, M3, M4, M5, M6, v1, v2, v3, v4, v5, v6, ...
  T1, T1_0, T2, T2_0, T3, T3_0, T4, T4_0, T5, T5_0, T6, T6_0, ...
- M_dot_2, M_dot_3, M_dot_4, M_dot_6, P_shaft, M_hx, dp_coolant, ...
- T_air_seg, P_air_seg, v_air_seg, Re_air_seg, v_channel_seg, ...
+ M_dot_2, M_dot_3, M_dot_4, M_dot_5, M_dot_6, P_shaft, M_hx, dp_coolant, ...
+ T_air_seg, P_air_seg, v_air_seg, Re_air_seg, Pr_air_seg, v_channel_seg, ...
  f_air_seg, Nu_air_seg, h_air_seg, Q_seg_arr, dp_seg_arr, T_cool_out_arr, dp_cool_seg, ...
- L_solution, Q_pred_solution, T_h_o_solution, dp_hx, drag_HX] = ...
+ L_solution, Q_pred_solution, T_h_o_solution, dp_hx, drag_HX, ...
+ P_0_air_seg, T_0_air_seg, M_air_seg, f_hx_seg, inlet_dp] = ...
     pressure_iteration_disc(e, r, m_dot_streamtube, fan, ...
     hx_theta, fpr_init, M_dot_in, flight_phase, theta_max_diff, d3, M_dot_FOD, ...
     M_dot_comp, counter, d2_init, AR_noz, P1, P_inf, ...
@@ -117,7 +118,7 @@ fprintf("Total drag = %f\n",drag_tot);
 
 results.L_solution   = L_solution;
 results.dp_hx        = dp_hx;
-results.dp_coolant   = dp_coolant_loop;
+results.dp_coolant   = dp_coolant;
 results.T4           = T4;
 results.M_hx         = M_hx;
 results.drag_HX      = drag_HX;
@@ -160,6 +161,8 @@ results.M6           = M6;
 results.M_dot_2      = M_dot_2;
 results.M_dot_3      = M_dot_3;
 results.M_dot_4      = M_dot_4;
+results.M_dot_5      = M_dot_5;
+results.M_dot_6      = M_dot_6;
 results.m_spill      = m_dot_streamtube - M_dot_2;
 results.m_dot_seg    = m_dot_seg;
 results.AR_init      = AR_init;
@@ -176,11 +179,17 @@ results.dp_seg_arr   = dp_seg_arr;
 results.v_air_seg    = v_air_seg;
 results.v_channel_seg = v_channel_seg;
 results.Re_air_seg   = Re_air_seg;
+results.Pr_air_seg   = Pr_air_seg;
 results.f_air_seg    = f_air_seg;
 results.Nu_air_seg   = Nu_air_seg;
 results.h_air_seg    = h_air_seg;
 results.Q_pred_solution = Q_pred_solution;
 results.T_cool_out_arr = T_cool_out_arr;
 results.dp_cool_seg  = dp_cool_seg;
+results.P_0_air_seg  = P_0_air_seg;
+results.T_0_air_seg  = T_0_air_seg;
+results.M_air_seg    = M_air_seg;
+results.f_hx_seg     = f_hx_seg;
+results.inlet_dp     = inlet_dp;
 
 end

@@ -1,4 +1,4 @@
-function [dp_coolant_loop,d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, v_channel_air, v_channel_coolant,d_h_coolant, A_o_coolant, A_o_air, Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, Q_pred_solution, T_cool_out] = HX_design1(e,r,hx_theta, counter, ~,A3,v3, R,P3,P3_0, h, d3, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant, M_dot_3, T3)
+function [dp_coolant_loop,d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, v_channel_air, v_channel_coolant,d_h_coolant, A_o_coolant, A_o_air, Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, Q_pred_solution, T_cool_out, Pr_air, f_air, Nu_air, f_hx, inlet_dp] = HX_design1(e,r,hx_theta, counter, ~,A3,v3, R,P3,P3_0, h, d3, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant, M_dot_3, T3)
 
 %% Inputs %%
 
@@ -375,6 +375,18 @@ fprintf("Coolant side pressure loss is %f bar \n",dp_coolant_loop/1e+05);
 % if dp_coolant_loop > 1.5e+05
 %     error("Coolant side pressure loss is %f bar \n",dp_coolant_loop/1e+05);
 % end
+
+A_solid_alt = A_frontal - A_o_air*N_fin_air*N_air_pass;
+
+% fprintf('\nPlate area: %.5f m^2, fin area: %.5f m^2, together: %.5f m^2\n', A_p_air, A_f_air, A_p_air + A_f_air);
+% fprintf('Solid area: %.5f m^2\n', A_solid);
+% fprintf('Open area: %.5f m^2, together: %.5f m^2\n', A_o_air*N_fin_air*N_air_pass, A_solid+A_o_air*N_fin_air*N_air_pass);
+fprintf('Diffuser outlet area: %.5f m^2, HX inlet area: %.5f m^2\n', A3, A_frontal);
+fprintf('Cross sectional area of core: %.5f m^2\n', V_core/L_solution)
+
+% - 0.5*rho_air(P4,T4)*v4^2
+inlet_dp = (0.5*rho_air(P3,T3)*v3^2)*(A_solid_alt/A_frontal);
+fprintf('Estimate inlet bulk pressure loss: %.2f Pa\n\n', inlet_dp)
 
 end
 
