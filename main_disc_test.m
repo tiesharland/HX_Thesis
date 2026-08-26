@@ -3,8 +3,8 @@ clc
 
 counter = 1;
 
-e = 6;
-r = 4.2;
+e = 4;
+r = 6;
 d2_init = 0.52; %0.45808;
 AR_diff = 3.8;
 AR_noz  = 0.36;
@@ -61,7 +61,7 @@ AR_init = AR_diff_arr;
 %%%--- RUN MODEL ---%%%
 
 tol_T = 0; % K
-use_DNS = true;
+use_DNS = false;
 
 results_D = run_disc_model_fwdpass(use_DNS, N_segments, e, r, hx_theta, fan, fpr_init, ...
     M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11, ...
@@ -71,18 +71,18 @@ results_D = run_disc_model_fwdpass(use_DNS, N_segments, e, r, hx_theta, fan, fpr
 %%%--- SUMMARY PRINTS ---%%%
 
 fprintf("\n=== HX RESULTS ===\n");
-fprintf("HX length          = %.4f m\n",   results_D.L_solution);
-fprintf("HX pressure drop   = %.2f Pa\n",  results_D.dp_hx);
-fprintf("Air outlet temp    = %.2f K\n",   results_D.T4);
-fprintf("HX mass            = %.2f kg\n",  results_D.M_hx);
-fprintf("HX drag         = %.2f N\n",   results_D.drag_HX);
-fprintf("P6 - P_inf         = %.2f Pa\n",  results_D.P6 - results_D.P_inf);
-fprintf("Coolant outlet temp = %.2f K\n",   results_D.T_cool_out);
-fprintf("Coolant pressure drop (avg) = %.2f Pa\n",   results_D.dp_coolant);
-fprintf("Cooling power  = %.3f MW\n",   results_D.Q_pred_solution/1e6);
-fprintf("Nozzle exit P6     = %.2f Pa\n",  results_D.P6);
-fprintf("Ambient P_inf      = %.2f Pa\n",  results_D.P_inf);
-fprintf("d_h / L            = %f  \n", results_D.d_h_air/results_D.L_solution);
+fprintf("HX length                      = %.4f m\n",   results_D.L_solution);
+fprintf("HX pressure drop               = %.2f Pa\n",  results_D.dp_hx);
+fprintf("Air outlet temp                = %.2f K\n",   results_D.T4);
+fprintf("HX mass                        = %.2f kg\n",  results_D.M_hx);
+fprintf("HX drag                        = %.2f N\n",   results_D.drag_HX);
+fprintf("P6 - P_inf                     = %.2f Pa\n",  results_D.P6 - results_D.P_inf);
+fprintf("Coolant outlet temp            = %.2f K\n",   results_D.T_cool_out);
+fprintf("Coolant pressure drop (avg)    = %.2f Pa\n",   results_D.dp_coolant);
+fprintf("Cooling power                  = %.3f MW\n",   results_D.Q_pred_solution/1e6);
+fprintf("Nozzle exit P6                 = %.2f Pa\n",  results_D.P6);
+fprintf("Ambient P_inf                  = %.2f Pa\n",  results_D.P_inf);
+fprintf("d_h / L                        = %f \n", results_D.d_h_air/results_D.L_solution);
 
 %%%--- PLOTS ---%%%
 

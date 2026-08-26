@@ -30,15 +30,15 @@ t11           = 216.65;
 R             = 287;
 hx_theta      = 60;
 fan           = "OFF";
-e             = 6; %9.656; %10;
-r             = 4.2; %3.5213; %4.2;
+e             = 4; %6; %9.656; %10;
+r             = 6; %4.2; %3.5213; %4.2;
 % n_modules     = 2;
-d2_init       = 0.52; % 0.46999; %0.44;
-AR_diff       = 3.6022; %4;
-AR_noz        = 0.38346; %0.33;
+d2_init       = 0.52; %0.52; % 0.46999; %0.44;
+AR_diff       = 3.8; %3.6022; %4;
+AR_noz        = 0.36; %0.38346; %0.33;
 fpr_init      = 1;
 M_dot_coolant = 44.4; % Max: 44.4, Min: 29
-% N_segments    = 10;
+N_segments    = 50;
 
 M_dot_FOD  = 0;
 M_dot_comp = 0;
@@ -52,9 +52,9 @@ n_modules = 2; %ducts per nacelle
 
 % tol_T = results_L.T_cool_out - results_L.T_h_o;
 tol_T = 3;
-use_DNS = true;
+use_DNS = false;
 
-N_list = [50];
+N_list = [N_segments];
 col_D = autumn(length(N_list));  % light -> dark as N increases
 col_DNS = winter(length(N_list));
 

@@ -121,10 +121,10 @@ if has_lumped
          'LineWidth', lw, 'DisplayName', 'Lumped T_{mean,c}');
 end
 if has_dns
-    plot(ax(1), x_bounds_DNS*1000, results_DNS.T_air_seg, '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
+    plot(ax(1), x_bounds_DNS*1000, mean(results_DNS.T_air_seg,2), '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
          'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
 end
-plot(ax(1), x_bounds_D*1000, results_D.T_air_seg, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(1), x_bounds_D*1000, mean(results_D.T_air_seg,2), 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
      'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(1), 'Location','southeast');
 
@@ -137,32 +137,32 @@ if has_lumped
          'MarkerFaceColor', col_lump, 'MarkerSize', ms, 'DisplayName', lbl_L);
 end
 if has_dns
-    plot(ax(2), x_bounds_DNS*1000, results_DNS.P_air_seg/1000, '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
+    plot(ax(2), x_bounds_DNS*1000, mean(results_DNS.P_air_seg,2)/1000, '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
          'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
 end
-plot(ax(2), x_bounds_D*1000, results_D.P_air_seg/1000, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(2), x_bounds_D*1000, mean(results_D.P_air_seg,2)/1000, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
      'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(2), 'Location','northeast');
 figs_out.air_state = fig;
 
 %% ---- Figure: Coolant Variables ---- %%
-[fig, ax] = get_or_create_fig(figs_in, 'coolant', 2, 1, 'HX Coolant Variables');
+[fig, ax] = get_or_create_fig(figs_in, 'coolant', 3, 1, 'HX Coolant Variables');
 
 if ~isfield(figs_in,'coolant')
     yline(ax(1), T_h_i, '--r', 'DisplayName', 'T_{h,i}', 'LabelHorizontalAlignment','left');
     yline(ax(1), T_c_i, '--b', 'DisplayName', 'T_{c,i}', 'LabelHorizontalAlignment','left');
     xlabel(ax(1),'Position along HX [mm]'); ylabel(ax(1),'Coolant temperature [K]');
-    title(ax(1),'Coolant temperature distribution through HX');
+    title(ax(1),'Coolant outlet temperature distribution through HX');
 end
 if has_lumped
     plot(ax(1), x_bounds_L*1000, [results_L.T_cool_out, results_L.T_cool_out], 's-', 'Color', col_lump, ...
          'LineWidth', lw, 'MarkerFaceColor', col_lump, 'MarkerSize', ms, 'DisplayName', lbl_L);
 end
 if has_dns
-    plot(ax(1), x_mid_DNS*1000, results_DNS.T_cool_out_arr, '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
+    plot(ax(1), x_mid_DNS*1000, results_DNS.T_cool_seg(:,end), '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
          'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
 end
-plot(ax(1), x_mid_D*1000, results_D.T_cool_out_arr, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(1), x_mid_D*1000, results_D.T_cool_seg(:,end), 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
      'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(1), 'Location','southeast');
 
@@ -175,12 +175,29 @@ if has_lumped
          'LineWidth', lw, 'MarkerFaceColor', col_lump, 'MarkerSize', ms, 'DisplayName', lbl_L);
 end
 if has_dns
-    plot(ax(2), x_mid_DNS*1000, results_DNS.dp_cool_seg/1e5, '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
+    plot(ax(2), x_mid_DNS*1000, mean(results_DNS.dp_cool_seg,2)/1e5, '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
          'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
 end
-plot(ax(2), x_mid_D*1000, results_D.dp_cool_seg/1e5, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(2), x_mid_D*1000, mean(results_D.dp_cool_seg,2)/1e5, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
      'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(2), 'Location','southeast');
+
+if ~isfield(figs_in,'coolant')
+    xlabel(ax(3),'Position along HX [mm]'); ylabel(ax(3),'Temperature difference [K]');
+    title(ax(3),'(Mean) Temperature difference distribution through HX');
+end
+if has_lumped
+    plot(ax(3), x_bounds_L*1000, [results_L.T_mean_h - results_L.T_mean_c, results_L.T_mean_h - results_L.T_mean_c], 's-', 'Color', col_lump, ...
+        'LineWidth', lw, 'MarkerFaceColor', col_lump, 'MarkerSize', ms, 'DisplayName', lbl_L);
+end
+if has_dns
+    plot(ax(3), x_mid_DNS*1000, mean(movmean(results_DNS.T_cool_seg,2,2,'Endpoints', 'discard') - movmean(results_DNS.T_air_seg,2,'Endpoints', 'discard'),2), '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
+        'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
+end
+plot(ax(3), x_mid_D*1000, mean(movmean(results_D.T_cool_seg,2,2,'Endpoints', 'discard') - movmean(results_D.T_air_seg,2,'Endpoints', 'discard'),2), 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+    'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
+legend(ax(3), 'Location','southeast');
+
 figs_out.coolant = fig;
 
 %% ---- Figure: Air Flow Variables (v, Re, Pr) ---- %%
@@ -195,10 +212,10 @@ if has_lumped
          'LineWidth', lw, 'MarkerFaceColor', col_lump, 'MarkerSize', ms, 'DisplayName', lbl_L);
 end
 if has_dns
-    plot(ax(1), x_bounds_DNS*1000, results_DNS.v_channel_seg, '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
+    plot(ax(1), x_bounds_DNS*1000, mean(results_DNS.v_channel_seg,2), '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
          'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
 end
-plot(ax(1), x_bounds_D*1000, results_D.v_channel_seg, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(1), x_bounds_D*1000, mean(results_D.v_channel_seg,2), 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
      'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(1), 'Location','northeast');
 
@@ -213,10 +230,10 @@ if has_lumped
          'MarkerFaceColor', col_lump, 'MarkerSize', ms, 'DisplayName', lbl_L);
 end
 if has_dns
-    plot(ax(2), x_bounds_DNS*1000, results_DNS.Re_air_seg, '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
+    plot(ax(2), x_bounds_DNS*1000, mean(results_DNS.Re_air_seg,2), '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
          'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
 end
-plot(ax(2), x_bounds_D*1000, results_D.Re_air_seg, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(2), x_bounds_D*1000, mean(results_D.Re_air_seg,2), 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
      'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(2), 'Location','northeast');
 
@@ -229,10 +246,10 @@ if has_lumped
          'MarkerFaceColor', col_lump, 'MarkerSize', ms, 'DisplayName', lbl_L);
 end
 if has_dns
-    plot(ax(3), x_bounds_DNS*1000, results_DNS.Pr_air_seg, '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
+    plot(ax(3), x_bounds_DNS*1000, mean(results_DNS.Pr_air_seg), '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
          'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
 end
-plot(ax(3), x_bounds_D*1000, results_D.Pr_air_seg, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(3), x_bounds_D*1000, mean(results_D.Pr_air_seg,2), 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
      'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(3), 'Location','northeast');
 figs_out.flow = fig;
@@ -249,10 +266,10 @@ if has_lumped
          'MarkerFaceColor', col_lump, 'MarkerSize', ms, 'DisplayName', lbl_L);
 end
 if has_dns
-    plot(ax(1), x_bounds_DNS*1000, results_DNS.f_air_seg, '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
+    plot(ax(1), x_bounds_DNS*1000, mean(results_DNS.f_air_seg,2), '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
          'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
 end
-plot(ax(1), x_bounds_D*1000, results_D.f_air_seg, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(1), x_bounds_D*1000, mean(results_D.f_air_seg,2), 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
      'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(1), 'Location','southeast');
 
@@ -264,7 +281,7 @@ if has_lumped
     plot(ax(2), x_bounds_L*1000, [results_L.f_hx, results_L.f_hx], 's-', 'Color', col_lump, 'LineWidth', lw, ...
          'MarkerFaceColor', col_lump, 'MarkerSize', ms, 'DisplayName', lbl_L);
 end
-plot(ax(2), x_bounds_D*1000, results_D.f_hx_seg, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(2), x_bounds_D*1000, mean(results_D.f_hx_seg,2), 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
      'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(2), 'Location','southeast');
 
@@ -277,10 +294,10 @@ if has_lumped
          'MarkerFaceColor', col_lump, 'MarkerSize', ms, 'DisplayName', lbl_L);
 end
 if has_dns
-    plot(ax(3), x_mid_DNS*1000, results_DNS.Nu_air_seg, '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
+    plot(ax(3), x_mid_DNS*1000, mean(results_DNS.Nu_air_seg,2), '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
          'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
 end
-plot(ax(3), x_mid_D*1000, results_D.Nu_air_seg, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(3), x_mid_D*1000, mean(results_D.Nu_air_seg,2), 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
      'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(3), 'Location','northeast');
 figs_out.heat_transfer = fig;
@@ -297,10 +314,10 @@ if has_lumped
          'MarkerFaceColor', col_lump, 'MarkerSize', ms, 'DisplayName', lbl_L);
 end
 if has_dns
-    plot(ax(1), x_mid_DNS*1000, results_DNS.h_air_seg, '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
+    plot(ax(1), x_mid_DNS*1000, mean(results_DNS.h_air_seg,2), '^-', 'Color', col_dns, 'LineWidth', lw_dns, ...
          'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
 end
-plot(ax(1), x_mid_D*1000, results_D.h_air_seg, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(1), x_mid_D*1000, mean(results_D.h_air_seg,2), 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
      'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(1), 'Location','northeast');
 
@@ -314,15 +331,15 @@ if has_lumped
          'DisplayName', lbl_L);
 end
 if has_dns
-    mean_T_airs_DNS = movmean(results_DNS.T_air_seg, 2); mean_T_airs_DNS = mean_T_airs_DNS(2:end);
-    mean_T_cools_DNS = (T_h_i + results_DNS.T_cool_out_arr)/2;
-    plot(ax(2), x_mid_DNS*1000, results_DNS.h_air_seg.*(mean_T_cools_DNS - mean_T_airs_DNS)/1000, '^-', ...
+    % mean_T_airs_DNS = movmean(results_DNS.T_air_seg, 2); mean_T_airs_DNS = mean_T_airs_DNS(2:end);
+    % mean_T_cools_DNS = (T_h_i + results_DNS.T_cool_out_arr)/2;
+    plot(ax(2), x_mid_DNS*1000, mean(results_DNS.h_air_seg.*(movmean(results_DNS.T_cool_seg,2,2,'Endpoints', 'discard') - movmean(results_DNS.T_air_seg,2,'Endpoints', 'discard')),2)/1000, '^-', ...
          'Color', col_dns, 'LineWidth', lw_dns, 'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, ...
          'DisplayName', lbl_DNS);
 end
-mean_T_airs_D = movmean(results_D.T_air_seg, 2); mean_T_airs_D = mean_T_airs_D(2:end);
-mean_T_cools_D = (T_h_i + results_D.T_cool_out_arr)/2;
-plot(ax(2), x_mid_D*1000, results_D.h_air_seg.*(mean_T_cools_D - mean_T_airs_D)/1000, 'o-', ...
+% mean_T_airs_D = movmean(results_D.T_air_seg, 2); mean_T_airs_D = mean_T_airs_D(2:end);
+% mean_T_cools_D = (T_h_i + results_D.T_cool_out_arr)/2;
+plot(ax(2), x_mid_D*1000, mean(results_D.h_air_seg.*(movmean(results_D.T_cool_seg,2,2,'Endpoints', 'discard') - movmean(results_D.T_air_seg,2,'Endpoints', 'discard')),2)/1000, 'o-', ...
      'Color', col_disc, 'LineWidth', lw_disc, 'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(2), 'Location','northeast');
 
@@ -335,11 +352,19 @@ if has_lumped
          'MarkerFaceColor', col_lump, 'MarkerSize', ms, 'DisplayName', lbl_L);
 end
 if has_dns
-    plot(ax(3), x_bounds_DNS*1000, [0, cumsum(results_DNS.Q_seg_arr)/1000], '^-', 'Color', col_dns, ...
+    plot(ax(3), x_mid_DNS*1000, cumsum(sum(results_DNS.Q_seg_arr,2))/1000, '^-', 'Color', col_dns, ...
          'LineWidth', lw_dns, 'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
 end
-plot(ax(3), x_bounds_D*1000, [0, cumsum(results_D.Q_seg_arr)/1000], 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(3), x_mid_D*1000, cumsum(sum(results_D.Q_seg_arr,2))/1000, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
      'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
+
+% if has_dns
+%     plot(ax(3), x_mid_DNS*1000, results_DNS.Q_seg_arr/1000, '^-', 'Color', col_dns, ...
+%         'LineWidth', lw_dns, 'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
+% end
+% plot(ax(3), x_mid_D*1000, results_D.Q_seg_arr/1000, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+%     'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
+
 legend(ax(3), 'Location','northeast');
 figs_out.thermal_perf = fig;
 
@@ -350,7 +375,11 @@ if ~isfield(figs_in,'pressure_drop')
     xlabel(ax(1),'Segment midpoint position [mm]'); ylabel(ax(1),'\Delta p per segment [Pa]');
     title(ax(1),'Pressure drop per segment');
 end
-plot(ax(1), x_mid_D*1000, results_D.dp_seg_arr, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+if has_dns
+    plot(ax(1), x_min_DNS*1000, mean(results_DNS.dp_seg_arr,2), '^-', 'Color', col_dns, ...
+        'LineWidth', lw_dns, 'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
+end
+plot(ax(1), x_mid_D*1000, mean(results_D.dp_seg_arr,2), 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
      'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(1), 'Location','northeast');
 
@@ -363,10 +392,10 @@ if has_lumped
          'MarkerFaceColor', col_lump, 'MarkerSize', ms, 'DisplayName', lbl_L);
 end
 if has_dns
-    plot(ax(2), x_bounds_DNS*1000, [0, cumsum(results_DNS.dp_seg_arr)], '^-', 'Color', col_dns, ...
+    plot(ax(2), x_bounds_DNS*1000, [0; cumsum(mean(results_DNS.dp_seg_arr,2))], '^-', 'Color', col_dns, ...
          'LineWidth', lw_dns, 'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
 end
-plot(ax(2), x_bounds_D*1000, [0, cumsum(results_D.dp_seg_arr)], 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(2), x_bounds_D*1000, [0; cumsum(mean(results_D.dp_seg_arr,2))], 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
      'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(2), 'Location','northwest');
 figs_out.pressure_drop = fig;
@@ -400,15 +429,17 @@ fprintf("Max deviation       = %.2e kg/s\n", max(abs(results_D.m_dot_seg - M_dot
 
 [fig, ax] = get_or_create_fig(figs_in, 'boundary_layer', 2, 1, 'Boundary Layer Analysis');
 
+%TODO insert the d_h_air to depict when BL's merge to developed flow
+
 if ~isfield(figs_in,'boundary_layer')
-    xlabel(ax(1),'Segment midpoint position [mm]'); ylabel(ax(1),'\Boundary layer height [mm]');
+    xlabel(ax(1),'Segment midpoint position [mm]'); ylabel(ax(1),'Boundary layer height [mm]');
     title(ax(1),'Boundary layer height through HX');
 end
 if has_dns
-    plot(ax(1), x_mid_DNS*1000, results_DNS.delta_BL_seg*1000, '^-', 'Color', col_dns, ...
+    plot(ax(1), x_mid_DNS*1000, mean(results_DNS.delta_BL_seg,2)*1000, '^-', 'Color', col_dns, ...
         'LineWidth', lw_dns, 'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
 end
-plot(ax(1), x_mid_D*1000, results_D.delta_BL_seg*1000, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(1), x_mid_D*1000, mean(results_D.delta_BL_seg,2)*1000, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
     'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(1), 'Location','northeast');
 
@@ -417,10 +448,10 @@ if ~isfield(figs_in,'boundary_layer')
     title(ax(2),'Hydraulic diameter through HX');
 end
 if has_dns
-    plot(ax(2), x_mid_DNS*1000, results_DNS.d_h_bulk_seg*1000, '^-', 'Color', col_dns, ...
+    plot(ax(2), x_mid_DNS*1000, mean(results_DNS.d_h_bulk_seg,2)*1000, '^-', 'Color', col_dns, ...
         'LineWidth', lw_dns, 'MarkerFaceColor', col_dns, 'MarkerSize', ms_dns, 'DisplayName', lbl_DNS);
 end
-plot(ax(2), x_mid_D*1000, results_D.d_h_bulk_seg*1000, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
+plot(ax(2), x_mid_D*1000, mean(results_D.d_h_bulk_seg,2)*1000, 'o-', 'Color', col_disc, 'LineWidth', lw_disc, ...
     'MarkerFaceColor', col_disc, 'MarkerSize', ms_disc, 'DisplayName', lbl);
 legend(ax(2), 'Location','northwest');
 figs_out.pressure_drop = fig;

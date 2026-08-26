@@ -160,5 +160,6 @@ results.Nu_air       = Nu_air;
 results.T_mean_c     = T_mean_c;
 results.f_hx         = f_hx;
 results.inlet_dp     = inlet_dp;
+results.T_mean_h     = T_mean_h;
 
 end
