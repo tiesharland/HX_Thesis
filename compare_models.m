@@ -30,10 +30,10 @@ t11           = 216.65;
 R             = 287;
 hx_theta      = 60;
 fan           = "OFF";
-e             = 4; %6; %9.656; %10;
-r             = 6; %4.2; %3.5213; %4.2;
+e             = 4 - 2*0.1/sqrt(2); %6; %9.656; %10;
+r             = 4 - 2*0.1/sqrt(2); %4.2; %3.5213; %4.2;
 % n_modules     = 2;
-d2_init       = 0.52; %0.52; % 0.46999; %0.44;
+d2_init       = 0.48; %0.52; % 0.46999; %0.44;
 AR_diff       = 3.8; %3.6022; %4;
 AR_noz        = 0.36; %0.38346; %0.33;
 fpr_init      = 1;
@@ -55,66 +55,42 @@ tol_T = 3;
 use_DNS = false;
 
 N_list = [N_segments];
-col_D = autumn(length(N_list));  % light -> dark as N increases
-col_DNS = winter(length(N_list));
 
 figs = struct();
+col_D   = autumn(length(N_list));
+col_DNS = winter(length(N_list));
+
+results_L = run_lumped_model(e, r, hx_theta, fan, fpr_init, M_dot_coolant, n_modules, ...
+        Q_tot, T_in_fc, T_out_fc, h, p11, t11, d2_init, AR_diff, AR_noz, V_inf, R, ...
+        flight_phase, M_dot_FOD, M_dot_comp);
+figs = plot_stations(results_L, 'lumped', 'figs', figs);
+figs = plot_HX(results_L, 'lumped', 'figs', figs);
+
 for i = 1:length(N_list)
     results_D = run_disc_model_fwdpass(false, N_list(i), e, r, hx_theta, fan, fpr_init, ...
-            M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11,...
+            M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11, ...
             d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, tol_T);
+    figs = plot_stations(results_D, 'discretised', 'figs', figs, 'color', col_D(i,:));
+    figs = plot_HX(results_D, 'discretised', 'figs', figs, 'color', col_D(i,:));
+
     if use_DNS
         results_DNS = run_disc_model_fwdpass(true, N_list(i), e, r, hx_theta, fan, fpr_init, ...
-            M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11,...
-            d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, tol_T);
+                M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11, ...
+                d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, tol_T);
+        figs = plot_stations(results_DNS, 'dns', 'figs', figs, 'color', col_DNS(i,:));
+        figs = plot_HX(results_DNS, 'dns', 'figs', figs, 'color', col_DNS(i,:));
     end
-        if i == 1
-        % include lumped comparison only on the first call to avoid duplicate legend entries
-            results_L = run_lumped_model(e, r, hx_theta, fan, fpr_init, ...
-                    M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11, ...
-                    d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp);
-            if use_DNS
-                figs = plot_HX(results_D, 'lumped', results_L, 'dns', results_DNS, 'figs', figs, ...
-                    'color', col_D(i,:), 'color_dns', col_DNS(i,:), 'plot_lumped', true, 'plot_dns', true);
-            else
-                figs = plot_HX(results_D, 'lumped', results_L, 'figs', figs, ...
-                    'color', col_D(i,:), 'plot_lumped', true);
-            end
-        else
-            if use_DNS
-                figs = plot_HX(results_D, 'dns', results_DNS, 'figs', figs, ...
-                    'color', col_D(i,:), 'color_dns', col_DNS(i,:), 'plot_dns', true);
-            else
-                figs = plot_HX(results_D, 'figs', figs, 'color', col_D(i,:));
-            end
-        end
 end
 
+results_cfd = process_wall_CFD_data(...
+    "C:\Users\tiesh\TUDelft\Thesis\CFD\\4by4_150ch_wall_q_air", ...
+    "C:\Users\tiesh\TUDelft\Thesis\CFD\\4by4_150ch_wall_Twall_air", ...
+    "C:\Users\tiesh\TUDelft\Thesis\CFD\\4by4_150ch_wall_Tbulk_air", ...
+    results_D.d_h_air);
+% figs = plot_HX(results_cfd, 'cfd',         'figs', figs);
 
 
 
-% %%%--- RUN LUMPED MODEL ---%%%
-% 
-% fprintf("\n========================================\n");
-% fprintf("        RUNNING LUMPED MODEL            \n");
-% fprintf("========================================\n");
-% 
-% results_L = run_lumped_model(e, r, hx_theta, fan, fpr_init, ...
-%     M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11, ...
-%     d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp);
-% 
-% %%%--- RUN DISCRETISED MODEL ---%%%
-% 
-% fprintf("\n========================================\n");
-% fprintf("      RUNNING DISCRETISED MODEL         \n");
-% fprintf("========================================\n");
-% 
-% results_D = run_disc_model_fwdpass(use_DNS, N_segments, e, r, hx_theta, fan, fpr_init, ...
-%     M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11,...
-%     d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, tol_T);
-% 
-% %%%--- COMPARISON SUMMARY ---%%%
-% 
 % fprintf("\n========================================\n");
 % fprintf("           MODEL COMPARISON             \n");
 % fprintf("========================================\n");
@@ -131,9 +107,4 @@ end
 % fprintf("%-30s %-15.4f %-15.4f\n", "Mass flow in [kg/s]", results_L.M_dot_2,     results_D.M_dot_2);
 % fprintf("%-30s %-15.4f %-15.4f\n", "Spillage [kg/s]",     results_L.m_spill,     results_D.m_spill);
 % fprintf("%-30s %-15.2f %-15.2f\n", "Bulk inlet pressure drag [Pa]",     results_L.inlet_dp,     results_D.inlet_dp);
-% 
-% %%%--- PLOTS ---%%%
-% 
-% plot_stations(results_D, results_L);
-% 
-% plot_HX(results_D, results_L);
+

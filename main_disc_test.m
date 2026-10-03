@@ -3,9 +3,9 @@ clc
 
 counter = 1;
 
-e = 4;
-r = 6;
-d2_init = 0.52; %0.45808;
+e = 4 - 2*0.1/sqrt(2);
+r = 4 - 2*0.1/sqrt(2);
+d2_init = 0.48; %0.45808;
 AR_diff = 3.8;
 AR_noz  = 0.36;
 A2      = pi*d2_init*d2_init/4;
@@ -45,10 +45,6 @@ R      = 287;
 hx_theta = 60;
 fpr_init = 1;
 
-fan  = "OFF";
-disc = "ON";
-N_segments = 50;
-
 %%%--- MASS FLOW LEAKS ---%%%
 
 M_dot_FOD  = 0;
@@ -60,10 +56,14 @@ AR_init = AR_diff_arr;
 
 %%%--- RUN MODEL ---%%%
 
+fan  = "OFF";
+disc = "ON";
+N_segments = 50;
+N_cool_seg = 0;
 tol_T = 0; % K
 use_DNS = false;
 
-results_D = run_disc_model_fwdpass(use_DNS, N_segments, e, r, hx_theta, fan, fpr_init, ...
+results_D = run_disc_model_fwdpass(use_DNS, N_segments, N_cool_seg, e, r, hx_theta, fan, fpr_init, ...
     M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11, ...
     d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, tol_T);
 
@@ -86,6 +86,18 @@ fprintf("d_h / L                        = %f \n", results_D.d_h_air/results_D.L_
 
 %%%--- PLOTS ---%%%
 
-plot_stations(results_D);
+figs = plot_stations(results_D, 'discretised');
 
-plot_HX(results_D);
+figs = plot_HX(results_D, 'discretised', 'figs', figs);
+
+
+% results_cfd = process_wall_CFD_data(...
+%     "C:\Users\tiesh\TUDelft\Thesis\CFD\4by4_150ch_wall\run 2\q_air", ...
+%     "C:\Users\tiesh\TUDelft\Thesis\CFD\4by4_150ch_wall\run 2\Twall_air", ...
+%     "C:\Users\tiesh\TUDelft\Thesis\CFD\4by4_150ch_wall\run 2\Tbulk_air", ...
+%     "C:\Users\tiesh\TUDelft\Thesis\CFD\4by4_150ch_wall\run 2\Pbulk_air", ...
+%     "C:\Users\tiesh\TUDelft\Thesis\CFD\4by4_150ch_wall\run 2\Vmag_air", ...
+%     "C:\Users\tiesh\TUDelft\Thesis\CFD\4by4_150ch_wall\run 2\M_dot_air", ...
+%     results_D.d_h_air);
+% 
+% compare_cfd_vs_2d(results_D, results_cfd);

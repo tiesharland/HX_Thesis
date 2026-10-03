@@ -1,16 +1,16 @@
 function [dp_coolant_loop, d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, ...
           N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, ...
-          v_channel_air, v_cool_seg, d_h_coolant, A_o_coolant, A_o_air, ...
-          Re_air, Re_cool_seg, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, ...
+          v_channel_air, v_channel_coolant, d_h_coolant, A_o_coolant, A_o_air, ...
+          Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, ...
           M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, T_cool_seg, dp_cool_seg, ...
           T_air_seg, P_air_seg, v_air_seg, Re_air_seg, Pr_air_seg, v_channel_seg, ...
           K_seg, f_air_seg, Nu_seg_arr, h_air_seg, eta_fin_seg, ...
           UA_seg_arr, NTU_seg_arr, eps_seg_arr, Q_seg_arr, dp_seg_arr, ...
           Q_pred_solution, T_h_o_solution, P_0_air_seg, T_0_air_seg, M_air_seg, f_hx_seg, inlet_dp, outlet_dp, ...
           delta_BL_seg, A_free_seg, d_h_bulk_seg, T_mean_c_arr, T_mean_h_arr] = ...
-          HX_design1_disc_2d_v2(use_DNS, e, r, hx_theta, counter, A3, v3, R, P3, ...
+          HX_design1_disc_1d(use_DNS, e, r, hx_theta, counter, A3, v3, R, P3, ...
           d3, T_h_o, n_modules, T_h_i, T_c_i, T_mean_h, ...
-          Q_tot, M_dot_coolant, M_dot_3, T3, N_segments, N_seg_cool, tol_T)
+          Q_tot, M_dot_coolant, M_dot_3, T3, N_segments, tol_T)
 
 
 % T_c_i = T3;
@@ -33,7 +33,6 @@ if Q_limit < Q_tot/n_modules
 end
 
 % m_dot_cool_seg = M_dot_coolant / N_segments;
-% m_dot_air_seg = m_dot_air / N_seg_cool;
 
 t_plate     = 0.5e-03;
 t_fin       = 0.1e-03;
@@ -51,7 +50,7 @@ h_passage_coolant = ht_coolant + (t_fin*sqrt(2));
 
 b_hx = sqrt(A_frontal);
 h_hx = b_hx;
-fprintf("HX height= %f\n", h_hx);
+fprintf("HX height= %f\n", b_hx);
 
 N_pass_tot = h_hx / ((t_plate+(ht_air+(t_fin/sqrt(2)))) + ...
                       (t_plate+(ht_coolant+(t_fin/sqrt(2)))));
@@ -71,7 +70,6 @@ A_o_coolant = (0.5*(b_t_coolant*0.5)*ht_coolant) + ...
 
 m_dot_pass_air     = m_dot_air     / N_air_pass;
 m_dot_pass_cool    = M_dot_coolant / N_coolant_pass;
-% m_dot_pass_air_seg = m_dot_air_seg / N_air_pass;
 
 
 A_p_coolant   = (b_t_coolant*0.5) + ((b_t_coolant*0.5)+(t_fin/sqrt(2)));
@@ -84,7 +82,7 @@ A_f_air      = sqrt(ht_air^2+(b_t_air*0.5)^2) + ...
     sqrt(((b_t_air*0.5)+(t_fin/sqrt(2)))^2 + ...
     (ht_air+(t_fin/sqrt(2)))^2);
 
-R_cond_seg = t_plate/(k_fin_val*t_plate*(2*N_pass_tot+2)*b_hx/N_seg_cool);
+R_cond_seg = t_plate/(k_fin_val*t_plate*(2*N_pass_tot+2)*b_hx);
 
 % Plates
 A_plates = (N_pass_tot + 2) * t_plate * b_hx;
@@ -132,41 +130,37 @@ R_tot             = 0;
 UA_unit           = 0;
 
 % Node arrays: N_segments+1 points
-T_air_seg    = zeros(N_segments+1, N_seg_cool);
-T_0_air_seg  = zeros(N_segments+1, N_seg_cool);
-P_air_seg    = zeros(N_segments+1, N_seg_cool);
-P_0_air_seg  = zeros(N_segments+1, N_seg_cool);
-Re_air_seg   = zeros(N_segments+1, N_seg_cool);
-Pr_air_seg   = zeros(N_segments+1, N_seg_cool);
-f_air_seg    = zeros(N_segments+1, N_seg_cool);
-v_channel_seg    = zeros(N_segments+1, N_seg_cool);
-v_air_seg    = zeros(N_segments+1, N_seg_cool);
-rho_air_seg  = zeros(N_segments+1, N_seg_cool);
-M_air_seg    = zeros(N_segments+1, N_seg_cool);
-f_hx_seg     = zeros(N_segments+1, N_seg_cool);
-
-T_cool_seg = zeros(N_segments, N_seg_cool+1);
+T_air_seg    = zeros(N_segments+1,1);
+T_0_air_seg  = zeros(N_segments+1,1);
+P_air_seg    = zeros(N_segments+1,1);
+P_0_air_seg  = zeros(N_segments+1,1);
+Re_air_seg   = zeros(N_segments+1,1);
+Pr_air_seg   = zeros(N_segments+1,1);
+f_air_seg    = zeros(N_segments+1,1);
+v_channel_seg    = zeros(N_segments+1,1);
+v_air_seg    = zeros(N_segments+1,1);
+rho_air_seg  = zeros(N_segments+1,1);
+M_air_seg    = zeros(N_segments+1,1);
+f_hx_seg     = zeros(N_segments+1,1);
 
 % Segment arrays: N_segments values
-K_seg        = zeros(N_segments, N_seg_cool);
-Q_seg_arr    = zeros(N_segments, N_seg_cool);
-dp_seg_arr   = zeros(N_segments, N_seg_cool);
-Nu_seg_arr   = zeros(N_segments, N_seg_cool);
-h_air_seg    = zeros(N_segments, N_seg_cool);
-eta_fin_seg  = zeros(N_segments, N_seg_cool);
-UA_seg_arr   = zeros(N_segments, N_seg_cool);
-NTU_seg_arr  = zeros(N_segments, N_seg_cool);
-eps_seg_arr  = zeros(N_segments, N_seg_cool);
-v_cool_seg   = zeros(N_segments, N_seg_cool);
-dp_cool_seg  = zeros(N_segments, N_seg_cool);
-Re_cool_seg  = zeros(N_segments, N_seg_cool);
-h_cool_seg  = zeros(N_segments, N_seg_cool);
-
-delta_BL_seg     = zeros(N_segments, N_seg_cool);
-A_free_seg       = zeros(N_segments, N_seg_cool);
-d_h_bulk_seg     = zeros(N_segments, N_seg_cool);
-T_mean_c_arr     = zeros(N_segments, N_seg_cool);
-T_mean_h_arr     = zeros(N_segments, N_seg_cool);
+K_seg        = zeros(N_segments,1);
+Q_seg_arr    = zeros(N_segments,1);
+dp_seg_arr   = zeros(N_segments,1);
+Nu_seg_arr   = zeros(N_segments,1);
+h_air_seg    = zeros(N_segments,1);
+eta_fin_seg  = zeros(N_segments,1);
+UA_seg_arr   = zeros(N_segments,1);
+NTU_seg_arr  = zeros(N_segments,1);
+eps_seg_arr  = zeros(N_segments,1);
+T_cool_seg = zeros(N_segments,2);
+v_cool_seg   = zeros(N_segments,1);
+dp_cool_seg  = zeros(N_segments,1);
+delta_BL_seg     = zeros(N_segments,1);
+A_free_seg       = zeros(N_segments,1);
+d_h_bulk_seg     = zeros(N_segments, 1);
+T_mean_c_arr     = zeros(N_segments, 1);
+T_mean_h_arr     = zeros(N_segments, 1);
 
 %% ---- Nested: counter-flow effectiveness ---- %%
 
@@ -190,7 +184,6 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
     % Segment arrays track integrated quantities over each segment.
 
     dx  = L / N_segments;
-    dy  = b_hx / N_seg_cool;
 
     Q_total  = 0;
     dp_total = inlet_dp;
@@ -203,7 +196,6 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
     T_in = T3;
     P_in = P3 - inlet_dp;
     v_air_in = v3;
-    T_in_cool = T_h_i;
 
     T_cool_out = T3;
     rho_in = rho_air(P_in, T_in);
@@ -215,19 +207,18 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
     f_hx_in = (1/(-2*log10(2.7*log10(Re_in)^1.2/Re_in+(sr/d_h_air)/3.71)))^2;
     M_in = v_channel_in/sqrt(gamma_air(cp_air(T_in))*R*T_in);
 
-    T_air_seg(1,:)   = T_in;      P_air_seg(1,:)   = P_in;
-    v_channel_seg(1,:)   = v_channel_in;      Re_air_seg(1,:)  = Re_in;
-    Pr_air_seg(1,:)  = Pr_in;     f_air_seg(1,:)   = f_in;     
-    v_air_seg(1,:)   = v_air_in;        rho_air_seg(1,:) = rho_in;
-    f_hx_seg(1,:)    = f_hx_in;
+    T_air_seg(1)   = T_in;      P_air_seg(1)   = P_in;
+    v_channel_seg(1)   = v_channel_in;      Re_air_seg(1)  = Re_in;
+    Pr_air_seg(1)  = Pr_in;     f_air_seg(1)   = f_in;     
+    v_air_seg(1)   = v_air_in;        rho_air_seg(1) = rho_in;
+    f_hx_seg(1)    = f_hx_in;
 
-    M_air_seg(1,:) = M_in;
-    P_0_air_seg(1,:) = P_in*((1+((gamma_air(cp_air(T_in))-1).*M_in.^2/2)).^ ...
+    M_air_seg(1) = M_in;
+    P_0_air_seg(1) = P_in*((1+((gamma_air(cp_air(T_in))-1).*M_in.^2/2)).^ ...
         ((gamma_air(cp_air(T_in)))./(gamma_air(cp_air(T_in))-1)));
-    T_0_air_seg(1,:) = T_in*(1+((gamma_air(cp_air(T_in))-1)*M_in.^2)/2);
+    T_0_air_seg(1) = T_in*(1+((gamma_air(cp_air(T_in))-1)*M_in.^2)/2);
 
-
-    T_cool_seg(:,1) = T_in_cool;
+    T_cool_seg(:,1) = T_h_i;
 
     %% ---- Geometry ---- %%
 
@@ -235,58 +226,66 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
 
     % A_ht_air_seg = ((A_f_air*N_fin_air*N_air_pass) + ...
     %     (A_p_air*N_fin_air*N_air_pass))*dx;
-    
-    A_ht_air_seg = 3*b_t_air*2*N_fin_air*N_air_pass*dx/N_seg_cool;
+
+    A_ht_air_seg = 3*b_t_air*2*N_fin_air*N_air_pass*dx;
+
+    % %% ---- Nested: compute all node properties from (T, P) ---- %%
+    % 
+    % function node = compute_node(T, P)
+    %     node.T   = T;
+    %     node.P   = P;
+    %     node.rho = rho_air(P, T);
+    %     node.v_channel   = (m_dot_pass_air/N_fin_air) / (node.rho*A_o_air);
+    %     node.Re  = node.rho*node.v_channel*d_h_air / mu_air(T);
+    %     node.Pr  = mu_air(T)*cp_air(T)/k_air(T);
+    %     node.f   = (1/(-2*log10(2.7*log10(node.Re)^1.2/node.Re + ...
+    %                (sr/d_h_air)/3.71)))^2;
+    % end
 
     %% ---- Segment loop (coolant iteration)---- %%
 
     for k = 1:N_segments
 
-        for l = 1:N_seg_cool
+        for inner = 1:max_cool
 
-            T_in = T_air_seg(k,l);      P_in = P_air_seg(k,l);
-            rho_in = rho_air_seg(k,l);  v_channel_in = v_channel_seg(k,l);
-            Re_in = Re_air_seg(k,l);    Pr_in = Pr_air_seg(k,l);
-            f_in  = f_air_seg(k,l);     f_hx_in = f_hx_seg(k,l);
+            T_mean_h_seg = (T_h_i + T_cool_out) / 2;
 
-            T_in_cool = T_cool_seg(k,l);
+            % Coolant properties at T_mean_h_seg
 
-            % T_mean_h_seg = (T_h_i + T_cool_out) / 2;
-
-            % Coolant properties at T_in_cool
-
-            v_cool      = (m_dot_pass_cool/N_segments/(2*N_fin_cool)) / (rho_EG(T_in_cool)*A_o_coolant);
-            Re_cool     = rho_EG(T_in_cool)*v_cool*d_h_coolant / mu_EG(T_in_cool);
-            Pr_cool     = mu_EG(T_in_cool)*cp_EG_50_50(T_in_cool)/k_EG(T_in_cool);
+            v_cool      = (m_dot_pass_cool/N_segments/(2*N_fin_cool)) / (rho_EG(T_mean_h_seg)*A_o_coolant);
+            Re_cool     = rho_EG(T_mean_h_seg)*v_cool*d_h_coolant / mu_EG(T_mean_h_seg);
+            Pr_cool     = mu_EG(T_mean_h_seg)*cp_EG_50_50(T_mean_h_seg)/k_EG(T_mean_h_seg);
             f_cool      = (1/(-1.8*log10((0.0015/d_h_coolant)^1.11 + (6.9/Re_cool))))^2;
-            dp_cool     = f_cool*dy*(0.5*1082*v_cool^2)/d_h_coolant;
+            dp_cool     = f_cool*b_hx*(0.5*1082*v_cool^2)/d_h_coolant;
 
             if Re_cool < 2300
                 Nu_cool    = 4.36;
-                h_cool = Nu_cool*k_EG(T_in_cool)/d_h_coolant;
+                h_cool = Nu_cool*k_EG(T_mean_h_seg)/d_h_coolant;
             else
                 Nu_cool = 0.023*Re_cool^0.8*Pr_cool^0.4;
                 j_cool = Nu_cool/(Re_cool*Pr_cool^(1/3));
-                G_cool = rho_EG(T_in_cool)*v_cool;
+                G_cool = rho_EG(T_mean_h_seg)*v_cool;
                 h_cool = j_cool*G_cool* ...
-                    cp_EG_50_50(T_in_cool)/Pr_cool^(2/3);
+                    cp_EG_50_50(T_mean_h_seg)/Pr_cool^(2/3);
             end
 
             m_cool       = sqrt(2*h_cool/(k_fin_val*t_fin));
             eta_fin_cool = tanh(m_cool*ht_coolant)/(m_cool*ht_coolant);
 
             A_ht_cool_seg = ((A_f_coolant*N_fin_cool*N_coolant_pass) + ...
-                (A_p_coolant*N_fin_cool*N_coolant_pass))/N_seg_cool;
-            % A_ht_cool_seg = 3*b_t_coolant*2*N_fin_cool*N_coolant_pass*dy;
+                (A_p_coolant*N_fin_cool*N_coolant_pass));
+            % A_ht_cool_seg = ((A_f_coolant*N_fin_cool*N_coolant_pass) + ...
+            %     (A_p_coolant*N_fin_cool*N_coolant_pass))*b_hx;
+            % A_ht_cool_seg = 3*b_t_coolant*2*N_fin_cool*N_coolant_pass*b_hx;
 
             R_cool_seg = 1/(h_cool*A_ht_cool_seg*eta_fin_cool);
 
 
-            % Segment capacities using T_in_cool, T_in
+            % Segment capacities using T_mean_h_seg
 
-            K       = T_in_cool / T_in;
-            C_c     = m_dot_air/N_seg_cool*cp_air(T_in);
-            C_h     = M_dot_coolant/N_segments*cp_EG_50_50(T_in_cool);
+            K       = T_mean_h_seg / T_in;
+            C_c     = m_dot_air*cp_air(T_in);
+            C_h     = M_dot_coolant/N_segments*cp_EG_50_50(T_mean_h_seg);
             C_min   = min(C_c, C_h);
             C_star  = C_min/max(C_c, C_h);
             
@@ -312,7 +311,7 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
 
             if use_DNS
                 % DNS lookup: Nu and Cf from thermoturb table
-                [~, Nu_seg, Cf_seg] = thermoturb_cached(Re_in, Pr_in, T_in, T_in_cool);
+                [~, Nu_seg, Cf_seg] = thermoturb_cached(Re_in, Pr_in, T_in, T_mean_h_seg);
                 f_out     = 4*Cf_seg;   % Fanning -> d_h-based
             else
                 % Use correlations for Nu and f_in
@@ -331,7 +330,7 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
                 end
             end
 
-            h_air   = Nu_seg*k_air(T_in)/d_h_bulk;
+            h_air   = Nu_seg*k_air(T_in)/d_h_air;
             m_air   = sqrt(2*h_air/(k_fin_val*t_fin));
             eta_fin = tanh(m_air*ht_air)/(m_air*ht_air);
             R_air   = 1/(h_air*A_ht_air_seg*eta_fin);
@@ -342,14 +341,15 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
             NTU     = UA_unit/C_min;
             eps     = epsilon_counterflow(NTU, C_star);
 
-            Q_seg   = eps*C_min*(T_in_cool - T_in);
+            Q_seg   = eps*C_min*(T_h_i - T_in);
             dp_seg  = f_hx_in*(dx/d_h_air)*0.5*rho_in*v_channel_in^2;
             % dp_seg  = f_in*(dx/d_h_air)*0.5*rho_in*v_air_in^2;
 
             % Outlet node conditions
-            T_out = T_in + Q_seg/C_c;
+            T_out = T_in + Q_seg/(m_dot_air*cp_air(T_in));
             P_out = P_in - dp_seg;
-            T_out_cool = T_in_cool - Q_seg/C_h;
+            T_cool_out_old = T_cool_out;
+            T_cool_out = T_h_i - Q_seg/(M_dot_coolant/N_segments * cp_EG_50_50(T_mean_h_seg));
 
             v_air_out = m_dot_air/(pi*d3*d3*rho_air(P_out,T_out)/4);
 
@@ -364,62 +364,217 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
             f_hx_out = (1/(-2*log10(2.7*log10(Re_out)^1.2/Re_out+(sr/d_h_air)/3.71)))^2; % As cited in Gerl et. al 2025
 
 
-            % T_lm_seg = ((T_mean_h_seg-T_out)-(T_mean_h_seg-T_in))/log((T_mean_h_seg-T_out)/(T_mean_h_seg-T_in));
-            % T_mean_c_seg = T_mean_h_seg-T_lm_seg;
-            T_mean_c_arr(k,l) = 0;
-            T_mean_h_arr(k,l) = 0;
-    
-            Q_seg_arr(k,l)   = Q_seg;
-            dp_seg_arr(k,l)  = dp_seg;
-            Nu_seg_arr(k,l)  = Nu_seg;
-            h_air_seg(k,l)   = h_air;
-            eta_fin_seg(k,l) = eta_fin;
-            UA_seg_arr(k,l)  = UA_unit;
-            eps_seg_arr(k,l) = eps;
-            NTU_seg_arr(k,l) = NTU;
-            K_seg(k,l)       = K;
-            v_cool_seg(k,l)  = v_cool;
-            dp_cool_seg(k,l)  = dp_cool;
-            Re_cool_seg(k,l)  = Re_cool;
-            h_cool_seg(k,l)   = h_cool;
-
-            delta_BL_seg(k,l) = delta_BL;
-            A_free_seg(k,l) = A_free;
-            d_h_bulk_seg(k,l) = d_h_bulk;
-    
-            % Compute and store outlet node at index k+1
-
-            T_cool_seg(k,l+1) = T_out_cool;
-    
-            T_air_seg(k+1,l)   = T_out;      P_air_seg(k+1,l)   = P_out;
-            v_channel_seg(k+1,l)   = v_channel_out;      Re_air_seg(k+1,l)  = Re_out;
-            Pr_air_seg(k+1,l)  = Pr_out;     f_air_seg(k+1,l)   = f_out;
-            v_air_seg(k+1,l)   = v_air_out;  rho_air_seg(k+1,l) = rho_out;
-            f_hx_seg(k+1,l)    = f_hx_out;
-    
-            M_out = v_channel_out/sqrt(gamma_air(cp_air(T_out))*R*T_out);
-            M_air_seg(k+1,l) = M_out;
-            P_0_air_seg(k+1,l) = P_out*((1+((gamma_air(cp_air(T_out))-1).*M_out.^2/2)).^ ...
-                ((gamma_air(cp_air(T_out)))./(gamma_air(cp_air(T_out))-1)));
-            T_0_air_seg(k+1,l) = T_out*(1+((gamma_air(cp_air(T_out))-1)*M_out.^2)/2);
-    
-    
-            Q_total  = Q_total  + Q_seg;
-            % dp_total = dp_total + dp_seg;
-            v_channel_coolant = v_cool;     % remove
+            difference = T_cool_out - T_cool_out_old;
+            if abs(difference) >= tol_cool
+                if inner == max_cool
+                    fprintf("Segment %.0f did not converge, T_cool_out: %.2f K, diff: %.5f  ", k, T_cool_out, difference)
+                    break
+                end
+            else
+                % fprintf("Segment %.0f converged in %.0f, T_cool_out: %.2f K   ", k, inner, T_cool_out)
+                break
+            end
 
         end
+
+        T_lm_seg = ((T_mean_h_seg-T_out)-(T_mean_h_seg-T_in))/log((T_mean_h_seg-T_out)/(T_mean_h_seg-T_in));
+        T_mean_c_seg = T_mean_h_seg-T_lm_seg;
+        T_mean_c_arr(k) = T_mean_c_seg;
+        T_mean_h_arr(k) = T_mean_h_seg;
+
+        Q_seg_arr(k)   = Q_seg;
+        dp_seg_arr(k)  = dp_seg;
+        Nu_seg_arr(k)  = Nu_seg;
+        h_air_seg(k)   = h_air;
+        eta_fin_seg(k) = eta_fin;
+        UA_seg_arr(k)  = UA_unit;
+        eps_seg_arr(k) = eps;
+        NTU_seg_arr(k) = NTU;
+        K_seg(k)       = K;
+        T_cool_seg(k,end) = T_cool_out;
+        v_cool_seg(k)  = v_cool;
+        dp_cool_seg(k)  = dp_cool;
+        delta_BL_seg(k) = delta_BL;
+        A_free_seg(k) = A_free;
+        d_h_bulk_seg(k) = d_h_bulk;
+
+        % Compute and store outlet node at index k+1
+
+        T_air_seg(k+1)   = T_out;      P_air_seg(k+1)   = P_out;
+        v_channel_seg(k+1)   = v_channel_out;      Re_air_seg(k+1)  = Re_out;
+        Pr_air_seg(k+1)  = Pr_out;     f_air_seg(k+1)   = f_out;
+        v_air_seg(k+1)   = v_air_out;  rho_air_seg(k+1) = rho_out;
+        f_hx_seg(k+1)    = f_hx_out;
+
+        M_out = v_channel_out/sqrt(gamma_air(cp_air(T_out))*R*T_out);
+        M_air_seg(k+1) = M_out;
+        P_0_air_seg(k+1) = P_out*((1+((gamma_air(cp_air(T_out))-1).*M_out.^2/2)).^ ...
+            ((gamma_air(cp_air(T_out)))./(gamma_air(cp_air(T_out))-1)));
+        T_0_air_seg(k+1) = T_in*(1+((gamma_air(cp_air(T_in))-1)*M_out.^2)/2);
+
+        % Update shared scalar outputs
+        v_channel_coolant = v_cool;
+        Re_coolant        = Re_cool;
+        h_coolant         = h_cool;
+
+        T_in   = T_out;
+        P_in   = P_out;
+        rho_in = rho_out;
+        v_channel_in = v_channel_out;
+        Re_in = Re_out;
+        Pr_in = Pr_out;
+        f_in  = f_out;
+        f_hx_in = f_hx_out;
+
+        Q_total  = Q_total  + Q_seg;
+        dp_total = dp_total + dp_seg;
 
     end
 
 
-    T_c_o_disc = mean(T_air_seg(end,:));
+% %% ---- Segment loop (approximate next T_cool_out)---- %%
+% 
+%     for k = 1:N_segments
+% 
+%         T_mean_h_seg = (T_h_i + T_cool_out) / 2;
+% 
+%         % Coolant properties at T_mean_h_seg
+% 
+%         v_cool      = (m_dot_pass_cool_seg/(2*N_fin_cool)) / (rho_EG(T_mean_h_seg)*A_o_coolant);
+%         Re_cool     = rho_EG(T_mean_h_seg)*v_cool*d_h_coolant / mu_EG(T_mean_h_seg);
+%         Pr_cool     = mu_EG(T_mean_h_seg)*cp_EG_50_50(T_mean_h_seg)/k_EG(T_mean_h_seg);
+%         f_cool      = (1/(-1.8*log10((0.0015/d_h_coolant)^1.11 + (6.9/Re_cool))))^2;
+%         dp_cool     = f_cool*b_hx*(0.5*1082*v_cool^2)/d_h_coolant;
+% 
+%         if Re_cool < 2300
+%             Nu_cool    = 4.36;
+%             h_cool = Nu_cool*k_EG(T_mean_h_seg)/d_h_coolant;
+%         else
+%             Nu_cool = 0.023*Re_cool^0.8*Pr_cool^0.4;
+%             j_cool = Nu_cool/(Re_cool*Pr_cool^(1/3));
+%             G_cool = rho_EG(T_mean_h_seg)*v_cool;
+%             h_cool = j_cool*G_cool* ...
+%                 cp_EG_50_50(T_mean_h_seg)/Pr_cool^(2/3);
+%         end
+% 
+%         m_cool       = sqrt(2*h_cool/(k_fin_val*t_fin));
+%         eta_fin_cool = tanh(m_cool*ht_coolant)/(m_cool*ht_coolant);
+% 
+%         A_ht_cool_seg = (A_f_coolant*N_fin_cool*N_coolant_pass) + ...
+%             (A_p_coolant*N_fin_cool*N_coolant_pass);
+% 
+%         R_cool_seg = 1/(h_cool*A_ht_cool_seg*eta_fin_cool);
+% 
+% 
+%         % Segment capacities using T_mean_h_seg
+% 
+%         K       = T_mean_h_seg / T_in;
+%         C_c     = m_dot_air*cp_air(T_in);
+%         C_h     = m_dot_cool_seg*cp_EG_50_50(T_mean_h_seg);
+%         C_min   = min(C_c, C_h);
+%         C_star  = C_min/max(C_c, C_h);
+% 
+% 
+%         % Air-side heat transfer 
+% 
+%         if Re_in < 2300
+%             Nu_seg = 3.66;
+%         elseif Re_in < 3000
+%             w           = (Re_in-2300)/(3000-2300);
+%             Nu_turb     = (f_in/2)*(Re_in-1000)*Pr_in* ...
+%                           (1+(d_h_air/(dx*k))^(2/3))*K / ...
+%                           (1+12.7*sqrt(f_in/2)*(Pr_in^(2/3)-1));
+%             Nu_seg = (1-w)*3.66 + w*Nu_turb;
+%         else
+%             Nu_seg     = (f_in/2)*(Re_in-1000)*Pr_in* ...
+%                           (1+(d_h_air/(dx*k))^(2/3))*K / ...
+%                           (1+12.7*sqrt(f_in/2)*(Pr_in^(2/3)-1));
+%         end
+% 
+%         h_air   = Nu_seg*k_air(T_in)/d_h_air;
+%         m_air   = sqrt(2*h_air/(k_fin_val*t_fin));
+%         eta_fin = tanh(m_air*ht_air)/(m_air*ht_air);
+%         R_air   = 1/(h_air*A_ht_air_seg*eta_fin);
+% 
+%         % Total resistance and heat transfer
+%         R_tot   = R_air + R_cond_seg + R_cool_seg;
+%         UA_unit = 1/R_tot;
+%         NTU     = UA_unit/C_min;
+%         eps     = epsilon_counterflow(NTU, C_star);
+% 
+%         Q_seg   = eps*C_min*(T_h_i - T_in);
+%         % dp_seg  = f_in*(dx/d_h_air)*0.5*rho_in*v_channel_in^2;
+%         dp_seg  = f_in*(dx/d_h_air)*0.5*rho_in*v_air_in^2;
+% 
+%         % Outlet node conditions
+%         T_out = T_in + Q_seg/(m_dot_air*cp_air(T_in));
+%         P_out = P_in - dp_seg;
+%         T_cool_out_old = T_cool_out;
+%         T_cool_out = T_h_i - Q_seg/(m_dot_cool_seg * cp_EG_50_50(T_mean_h_seg));
+% 
+%         v_air_out = m_dot_air/(pi*d3*d3*rho_air(P_out,T_out)/4);
+% 
+%         rho_out = rho_air(P_out, T_out);
+%         v_channel_out = (m_dot_pass_air/N_fin_air) / (rho_out*A_o_air);
+%         % Re_out = rho_out*v_channel_out*d_h_air / mu_air(T_out);
+%         Re_out = rho_out*v_air_out*d_h_air / mu_air(T_out);
+%         Pr_out = mu_air(T_out)*cp_air(T_out)/k_air(T_out);
+%         f_out = (1/(-2*log10(2.7*log10(Re_out)^1.2/Re_out+(sr/d_h_air)/3.71)))^2;
+% 
+% 
+%         % difference = T_cool_out - T_cool_out_old;
+%         % if abs(difference) >= tol_cool
+%         %     if inner == max_cool
+%         %         fprintf("Segment %.0f did not converge, T_cool_out: %.2f K, diff: %.5f  ", k, T_cool_out, difference)
+%         %         break
+%         %     end
+%         % else
+%         %     % fprintf("Segment %.0f converged in %.0f, T_cool_out: %.2f K   ", k, inner, T_cool_out)
+%         %     break
+%         % end
+% 
+%         Q_seg_arr(k)   = Q_seg;
+%         dp_seg_arr(k)  = dp_seg;
+%         Nu_seg_arr(k)  = Nu_seg;
+%         h_air_seg(k)   = h_air;
+%         eta_fin_seg(k) = eta_fin;
+%         UA_seg_arr(k)  = UA_unit;
+%         eps_seg_arr(k) = eps;
+%         NTU_seg_arr(k) = NTU;
+%         K_seg(k)       = K;
+%         T_cool_out_arr(k) = T_cool_out;
+%         v_cool_seg(k)  = v_cool;
+%         dp_cool_seg(k)  = dp_cool;
+% 
+%         % Compute and store outlet node at index k+1
+% 
+%         T_air_seg(k+1)   = T_out;      P_air_seg(k+1)   = P_out;
+%         v_channel_seg(k+1)   = v_channel_out;      Re_air_seg(k+1)  = Re_out;
+%         Pr_air_seg(k+1)  = Pr_out;     f_air_seg(k+1)   = f_out;
+%         v_air_seg(k+1)   = v_air_out;  rho_air_seg(k+1) = rho_out;
+% 
+%         % Update shared scalar outputs
+%         v_channel_coolant = v_cool;
+%         Re_coolant        = Re_cool;
+%         h_coolant         = h_cool;
+% 
+%         T_in   = T_out;
+%         P_in   = P_out;
+%         rho_in = rho_out;
+%         v_channel_in = v_channel_out;
+%         Re_in = Re_out;
+%         Pr_in = Pr_out;
+%         f_in  = f_out;
+% 
+%         Q_total  = Q_total  + Q_seg;
+%         dp_total = dp_total + dp_seg;
+% 
+%     end
 
-    dp_total = dp_total + sum(mean(dp_seg_arr,2));
-    
-    dp_hx_disc = dp_total;
+    T_c_o_disc = T_air_seg(end);
+    dp_hx_disc = dp_total; %+ inlet_dp/2;
 
-    fprintf("\nQ_total = %.2f W,  T_air_out = %.2f K\n", Q_total, T_c_o_disc);
+    fprintf("\nQ_total = %.2f W,  T_air_out = %.2f K\n", Q_total, T_air_seg(end));
 
     % T_h_o_mix = T_h_i - Q_total/(M_dot_coolant*cp_EG_50_50(T_mean_h));
     % fprintf("Mixed coolant outlet = %.2f K,  system T_h_o = %.2f K,  deviation = %.4f K\n", ...
@@ -429,13 +584,10 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
     % T_h_o_predicted = sum(T_cool_out_arr .* arrayfun(@cp_EG_50_50, T_cool_out_arr)) / ...
     %     sum(arrayfun(@cp_EG_50_50, T_cool_out_arr));
 
-    % T_h_o_predicted = mean(T_cool_out_arr);
-    T_h_o_disc = mean(T_cool_seg(:,end));
-
-    T_h_o_predicted = T_h_o_disc;
+    T_h_o_predicted = mean(T_cool_seg(:,end));
 
     fprintf("Predicted mixed coolant outlet = %.4f K,  T_h_o requirement = %.4f K,  deviation = %.4f K\n", ...
-        T_h_o_disc, T_h_o, T_h_o_disc - T_h_o);
+        T_h_o_predicted, T_h_o, T_h_o_predicted - T_h_o);
 
 end
 
@@ -532,11 +684,49 @@ end
 fprintf("Effective length of HX = %.4f m\n", L_solution);
 [Q_pred_solution, T_h_o_solution] = Q_pred_L_disc(L_solution);
 
+% while true
+%     Q_high = Q_pred_L_disc(L_high);
+%     fprintf("L bracket upper = %.4f m,  Q = %.2f W\n", L_high, Q_high);
+%     if Q_high >= (Q_tot/n_modules)
+%         break
+%     end
+%     L_high = L_high*2;
+%     if L_high > 20
+%         fprintf("Max heat loss possible at L = %.4f m is Q = %.2f W\n", ...
+%                 L_high/2, Q_pred_L_disc(L_high/2));
+%         error('L_high grew too large — check inputs or UA_unit');
+%     end
+% end
+% 
+% L_solution = fzero(@(L) Q_pred_L_disc(L) - (Q_tot/n_modules), [L_low, L_high]);
+
+% while true
+%     T_out_h_high = Q_pred_L_disc(L_high);
+%     fprintf("L bracket upper = %.4f m,  T = %.2f K", L_high, T_out_h_high);
+%     if T_out_h_high <= T_h_o
+%         break
+%     end
+%     L_high = L_high*2;
+%     if L_high > 4
+%         fprintf("Max outlet coolant temp possible at L = %.4f m is T = %.2f K", ...
+%             L_high/2, Q_pred_L_disc(L_high/2));
+%         error('L_high grew too large — check inputs or UA_unit');
+%     end
+% end
+% 
+% options = optimset('TolFun', tol_L_iter);
+% L_solution = fzero(@(L) Q_pred_L_disc(L) - (T_h_o), [L_low, L_high], options);
+
+
+% 
+% fprintf("Effective length of HX = %.4f m\n", L_solution);
+% 
+% Q_pred_L_disc(L_solution);
 
 %% ---- Estimate Outlet pressure loss (Kays & London, 1960) ---- %%
 
-Ke = kays_london_triangular(sigma, mean(Re_air_seg(end,:)), 'Ke', false);
-outlet_dp = mean(v_channel_seg(end,:))^2 * rho_air(mean(P_air_seg(end,:)), mean(T_air_seg(end,:))) / 2 * (1 - sigma^2 - Ke);
+Ke = kays_london_triangular(sigma, Re_air_seg(end), 'Ke', false);
+outlet_dp = v_channel_seg(end)^2 * rho_air(P_air_seg(end), T_air_seg(end)) / 2 * (1 - sigma^2 - Ke);
 
 % outlet_dp = -inlet_dp/2;
 
@@ -601,10 +791,9 @@ M_hx        = 2700*V_core;
 % end
 
 N_fin_coolant   = 2*L_solution/(2*t_fin/sqrt(2)+b_t_coolant);
-f_coolant       = (1/(-1.8*log10((0.0015/d_h_coolant)^1.11 + (6.9/mean(Re_cool_seg,'all')))))^2;
+f_coolant       = (1/(-1.8*log10((0.0015/d_h_coolant)^1.11 + (6.9/Re_coolant))))^2;
 % dp_coolant_loop = f_coolant*b_hx*(0.5*1082*v_channel_coolant^2)/d_h_coolant;
-dp_cool_totals = sum(dp_cool_seg,2);
-dp_coolant_loop = mean(dp_cool_totals);
+dp_coolant_loop = mean(dp_cool_seg);
 fprintf("Coolant side pressure loss = %.4f bar\n", dp_coolant_loop/1e5);
 
 % fprintf('\nPlate area: %.5f m^2, fin area: %.5f m^2, together: %.5f m^2\n', A_p_air, A_f_air, A_p_air + A_f_air);

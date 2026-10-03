@@ -1,355 +1,267 @@
-function plot_stations(results_D, varargin)
-% Usage:
-%   plot_stations(results_D)                          — discretised only
-%   plot_stations(results_D, results_L)                — + lumped comparison
-%   plot_stations(results_D, results_L, results_DNS)   — + DNS comparison
-%   plot_stations(results_D, [], results_DNS)          — DNS only, no lumped
+function figs_out = plot_stations(results, model_type, varargin)
+% plot_stations  Add one model's TMS station data to a shared set of
+% comparison figures - same calling convention as plot_HX.
+%
+% Usage (one call per dataset, same figs struct passed back in each time):
+%   figs = plot_stations(results_D,    'discretised');
+%   figs = plot_stations(results_L,    'lumped',      'figs', figs);
+%   figs = plot_stations(results_DNS,  'dns',         'figs', figs);
+%   figs = plot_stations(results_2D,   '2D',          'figs', figs);
+%   figs = plot_stations(results_2DNS, '2DNS',        'figs', figs);
+%
+% model_type: 'lumped' | 'discretised' | 'dns' | '2D' | '2DNS'
+%   All five share the same 7-station (0..6) TMS field names (P1..P6,
+%   P1_0..P6_0, T1..T6, v1..v6, M1..M6, M_dot_2..M_dot_6, m_spill,
+%   P_inf, P_inf_tot, T_inf, M_inf, V_inf).
+%   'discretised' / 'dns' / '2D' / '2DNS' additionally carry HX-interior
+%   arrays (T_air_seg, P_air_seg, P_0_air_seg, v_air_seg, v_channel_seg,
+%   m_dot_seg, N_segments), plotted as a smooth curve between stations
+%   3 and 4; 'lumped' has no interior resolution and is skipped there.
+%
+% Optional name-value pairs:
+%   'figs'           - existing figs struct to add to (default: new struct)
+%   'color'          - override this call's station marker/line color
+%   'interior_color' - override this call's HX-interior line color
+%   'marker'         - override this call's station marker
+%   'linestyle'      - override this call's station line style
+%   'linewidth'      - override this call's LineWidth
+%   'markersize'     - override this call's MarkerSize
+%   'label'          - override this call's legend label (interior line
+%                       is labelled '<label> HX interior')
+%
+% Sweep pattern, reusing the same figs struct:
+%   figs = struct();
+%   for i = 1:length(N_list)
+%       results_D = run_disc_model_fwdpass(...);
+%       figs = plot_stations(results_D, 'discretised', 'figs', figs, 'color', cmap(i,:));
+%   end
 
-has_lumped = ~isempty(varargin) && ~isempty(varargin{1});
-has_dns    = numel(varargin) >= 2 && ~isempty(varargin{2});
+p = inputParser;
+addParameter(p, 'figs', struct());
+addParameter(p, 'color', []);
+addParameter(p, 'interior_color', []);
+addParameter(p, 'marker', '');
+addParameter(p, 'linestyle', '');
+addParameter(p, 'linewidth', []);
+addParameter(p, 'markersize', []);
+addParameter(p, 'label', '');
+parse(p, varargin{:});
 
-if has_lumped
-    results_L = varargin{1};
+figs_in   = p.Results.figs;
+is_lumped = strcmpi(model_type, 'lumped');
+
+style = get_style(model_type, p.Results.color, p.Results.interior_color, ...
+                   p.Results.marker, p.Results.linestyle, p.Results.linewidth, p.Results.markersize);
+[lbl, interior_lbl] = get_label(model_type, p.Results.label);
+
+%% ---- Shared freestream quantities ---- %%
+P_inf     = results.P_inf;
+P_inf_tot = results.P_inf_tot;
+T_inf     = results.T_inf;
+M_inf     = results.M_inf;
+V_inf     = results.V_inf;
+
+%% ---- Station arrays (every model type carries these) ---- %%
+P_arr  = [P_inf,     results.P1,   results.P2,   results.P3,   results.P4,   results.P5,   results.P6];
+P0_arr = [P_inf_tot, results.P1_0, results.P2_0, results.P3_0, results.P4_0, results.P5_0, results.P6_0];
+T_arr  = [T_inf,     results.T1,   results.T2,   results.T3,   results.T4,   results.T5,   results.T6];
+v_arr  = [V_inf,     results.v1,   results.v2,   results.v3,   results.v4,   results.v5,   results.v6];
+M_arr  = [M_inf,     results.M1,   results.M2,   results.M3,   results.M4,   results.M5,   results.M6];
+
+m_dot_streamtube = results.M_dot_2 + results.m_spill;
+M_dot_arr = [m_dot_streamtube, m_dot_streamtube, results.M_dot_2, results.M_dot_3, ...
+             results.M_dot_4, results.M_dot_5, results.M_dot_6];
+
+%% ---- HX-interior arrays (discretised-family types only) ---- %%
+if ~is_lumped
+    x_HX          = linspace(3, 4, results.N_segments+1);
+    T_air_seg     = results.T_air_seg;
+    P_air_seg     = results.P_air_seg;
+    P_0_air_seg   = results.P_0_air_seg;
+    v_air_seg     = results.v_air_seg;
+    v_channel_seg = results.v_channel_seg;
+    m_dot_seg     = results.m_dot_seg;
 end
-if has_dns
-    results_DNS = varargin{2};
-end
 
-%% ---- Shared freestream quantities (from results_D only) ---- %%
-
-P_inf     = results_D.P_inf;
-P_inf_tot = results_D.P_inf_tot;
-T_inf     = results_D.T_inf;
-M_inf     = results_D.M_inf;
-V_inf     = results_D.V_inf;
-
-%% ---- TMS state arrays — discretised ---- %%
-
-P_D  = [P_inf,     results_D.P1,   results_D.P2,   results_D.P3,   results_D.P4,   results_D.P5,   results_D.P6];
-P0_D = [P_inf_tot, results_D.P1_0, results_D.P2_0, results_D.P3_0, results_D.P4_0, results_D.P5_0, results_D.P6_0];
-T_D  = [T_inf,     results_D.T1,   results_D.T2,   results_D.T3,   results_D.T4,   results_D.T5,   results_D.T6];
-v_D  = [V_inf,     results_D.v1,   results_D.v2,   results_D.v3,   results_D.v4,   results_D.v5,   results_D.v6];
-M_D  = [M_inf,     results_D.M1,   results_D.M2,   results_D.M3,   results_D.M4,   results_D.M5,   results_D.M6];
-
-N_segments    = results_D.N_segments;
-T_air_seg     = results_D.T_air_seg;
-P_air_seg     = results_D.P_air_seg;
-P_0_air_seg   = results_D.P_0_air_seg;
-v_air_seg     = results_D.v_air_seg;
-v_channel_seg = results_D.v_channel_seg;
-
-%% ---- TMS state arrays — lumped ---- %%
-
-if has_lumped
-    P_L  = [P_inf,     results_L.P1,   results_L.P2,   results_L.P3,   results_L.P4,   results_L.P5,   results_L.P6];
-    P0_L = [P_inf_tot, results_L.P1_0, results_L.P2_0, results_L.P3_0, results_L.P4_0, results_L.P5_0, results_L.P6_0];
-    T_L  = [T_inf,     results_L.T1,   results_L.T2,   results_L.T3,   results_L.T4,   results_L.T5,   results_L.T6];
-    v_L  = [V_inf,     results_L.v1,   results_L.v2,   results_L.v3,   results_L.v4,   results_L.v5,   results_L.v6];
-    M_L  = [M_inf,     results_L.M1,   results_L.M2,   results_L.M3,   results_L.M4,   results_L.M5,   results_L.M6];
-end
-
-%% ---- TMS state arrays — DNS-based ---- %%
-
-if has_dns
-    P_DNS  = [P_inf,     results_DNS.P1,   results_DNS.P2,   results_DNS.P3,   results_DNS.P4,   results_DNS.P5,   results_DNS.P6];
-    P0_DNS = [P_inf_tot, results_DNS.P1_0, results_DNS.P2_0, results_DNS.P3_0, results_DNS.P4_0, results_DNS.P5_0, results_DNS.P6_0];
-    T_DNS  = [T_inf,     results_DNS.T1,   results_DNS.T2,   results_DNS.T3,   results_DNS.T4,   results_DNS.T5,   results_DNS.T6];
-    v_DNS  = [V_inf,     results_DNS.v1,   results_DNS.v2,   results_DNS.v3,   results_DNS.v4,   results_DNS.v5,   results_DNS.v6];
-    M_DNS  = [M_inf,     results_DNS.M1,   results_DNS.M2,   results_DNS.M3,   results_DNS.M4,   results_DNS.M5,   results_DNS.M6];
-
-    N_segments_DNS    = results_DNS.N_segments;
-    T_air_seg_DNS     = results_DNS.T_air_seg;
-    P_air_seg_DNS     = results_DNS.P_air_seg;
-    P_0_air_seg_DNS   = results_DNS.P_0_air_seg;
-    v_air_seg_DNS     = results_DNS.v_air_seg;
-    v_channel_seg_DNS = results_DNS.v_channel_seg;
-end
-
-%% ---- Colour scheme ---- %%
-col_L   = [0.122 0.471 0.706];   % blue   — lumped
-col_D   = [0.839 0.153 0.157];   % red    — discretised
-col_HX  = [0.173 0.627 0.173];   % green  — HX interior (discretised)
-col_DNS = [0.580 0.404 0.741];   % purple — DNS-based
-col_HXDNS = [1.000 0.498 0.055]; % orange — HX interior (DNS-based)
-lw = 1.5;
-ms = 7;
-
-%% ---- Station x-positions ---- %%
 x_stations = 0:6;
-labels     = {'0 (∞)','1','2','3','4','5','6'};
+labels     = {'0 (\infty)','1','2','3','4','5','6'};
 
-x_HX     = linspace(3, 4, N_segments+1);
-if has_dns
-    x_HX_DNS = linspace(3, 4, N_segments_DNS+1);
+figs_out = figs_in;
+
+    %% ---- Nested: station-level line (marker+line, at the 7 TMS stations) ---- %%
+    function add_station_line(ax, y)
+        plot(ax, x_stations, y, [style.marker style.linestyle], 'Color', style.color, ...
+             'LineWidth', style.lw, 'MarkerFaceColor', style.color, ...
+             'MarkerSize', style.ms, 'DisplayName', lbl);
+    end
+
+    %% ---- Nested: HX-interior line (smooth curve between stations 3-4) ---- %%
+    function add_interior_line(ax, y, ln_style, name_suffix)
+        if nargin < 3 || isempty(ln_style), ln_style = '-'; end
+        if nargin < 4, name_suffix = ''; end
+        plot(ax, x_HX, y, ln_style, 'Color', style.interior_color, 'LineWidth', style.lw, ...
+             'DisplayName', [interior_lbl name_suffix]);
+    end
+
+%% ---- Figure: Static pressure through TMS ---- %%
+[fig, ax] = get_or_create_fig(figs_in, 'static_pressure', 1, 1, 'Static Pressure — TMS Comparison');
+if ~isfield(figs_in,'static_pressure')
+    set(ax(1), 'XTick', x_stations, 'XTickLabel', labels)
+    xlabel(ax(1),'TMS Station'); ylabel(ax(1),'Static pressure [kPa]');
+    title(ax(1),'Static pressure through TMS');
+end
+add_station_line(ax(1), P_arr/1e3);
+if ~is_lumped, add_interior_line(ax(1), P_air_seg/1e3); end
+legend(ax(1), 'Location','best');
+figs_out.static_pressure = fig;
+
+%% ---- Figure: Total pressure through TMS ---- %%
+[fig, ax] = get_or_create_fig(figs_in, 'total_pressure', 1, 1, 'Total Pressure — TMS Comparison');
+if ~isfield(figs_in,'total_pressure')
+    set(ax(1), 'XTick', x_stations, 'XTickLabel', labels)
+    xlabel(ax(1),'TMS Station'); ylabel(ax(1),'Total pressure [kPa]');
+    title(ax(1),'Total pressure through TMS');
+end
+add_station_line(ax(1), P0_arr/1e3);
+if ~is_lumped, add_interior_line(ax(1), P_0_air_seg/1e3); end
+legend(ax(1), 'Location','best');
+figs_out.total_pressure = fig;
+
+%% ---- Figure: Static temperature through TMS ---- %%
+[fig, ax] = get_or_create_fig(figs_in, 'static_temperature', 1, 1, 'Static Temperature — TMS Comparison');
+if ~isfield(figs_in,'static_temperature')
+    set(ax(1), 'XTick', x_stations, 'XTickLabel', labels)
+    xlabel(ax(1),'TMS Station'); ylabel(ax(1),'Static temperature [K]');
+    title(ax(1),'Static temperature through TMS');
+end
+add_station_line(ax(1), T_arr);
+if ~is_lumped, add_interior_line(ax(1), T_air_seg); end
+legend(ax(1), 'Location','best');
+figs_out.static_temperature = fig;
+
+%% ---- Figure: Velocity through TMS ---- %%
+[fig, ax] = get_or_create_fig(figs_in, 'velocity', 1, 1, 'Velocity — TMS Comparison');
+if ~isfield(figs_in,'velocity')
+    set(ax(1), 'XTick', x_stations, 'XTickLabel', labels)
+    xlabel(ax(1),'TMS Station'); ylabel(ax(1),'Velocity [m/s]');
+    title(ax(1),'Velocity through TMS');
+end
+add_station_line(ax(1), v_arr);
+if ~is_lumped
+    add_interior_line(ax(1), v_air_seg, '-', '');
+    add_interior_line(ax(1), v_channel_seg, '--', ' channel');
+end
+legend(ax(1), 'Location','best');
+figs_out.velocity = fig;
+
+%% ---- Figure: Mach number through TMS ---- %%
+% No HX-interior resolution tracked for Mach number - station points only.
+[fig, ax] = get_or_create_fig(figs_in, 'mach_number', 1, 1, 'Mach Number — TMS Comparison');
+if ~isfield(figs_in,'mach_number')
+    set(ax(1), 'XTick', x_stations, 'XTickLabel', labels)
+    xlabel(ax(1),'TMS Station'); ylabel(ax(1),'Mach number [-]');
+    title(ax(1),'Mach number through TMS');
+end
+add_station_line(ax(1), M_arr);
+legend(ax(1), 'Location','best');
+figs_out.mach_number = fig;
+
+%% ---- Figure: Combined 2x2 summary panel ---- %%
+[fig, ax] = get_or_create_fig(figs_in, 'summary', 2, 2, 'TMS Summary — Model Comparison');
+if ~isfield(figs_in,'summary')
+    sgtitle(fig, 'TMS Flow Variables — Model Comparison', 'FontSize', 12);
+    for i = 1:4
+        set(ax(i), 'XTick', x_stations, 'XTickLabel', labels)
+    end
+    ylabel(ax(1),'Static pressure [kPa]');  title(ax(1),'Static pressure');
+    ylabel(ax(2),'Static temperature [K]'); title(ax(2),'Static temperature');
+    ylabel(ax(3),'Velocity [m/s]');         title(ax(3),'Velocity');
+    ylabel(ax(4),'Mach number [-]');        title(ax(4),'Mach number');
+end
+add_station_line(ax(1), P_arr/1e3); if ~is_lumped, add_interior_line(ax(1), P_air_seg/1e3); end
+add_station_line(ax(2), T_arr);     if ~is_lumped, add_interior_line(ax(2), T_air_seg); end
+add_station_line(ax(3), v_arr);     if ~is_lumped, add_interior_line(ax(3), v_air_seg); end
+add_station_line(ax(4), M_arr);
+for i = 1:4
+    legend(ax(i), 'Location','best','FontSize',8);
+end
+figs_out.summary = fig;
+
+%% ---- Figure: Mass flow through TMS ---- %%
+[fig, ax] = get_or_create_fig(figs_in, 'mass_flow_tms', 1, 1, 'Mass Flow — TMS Comparison');
+if ~isfield(figs_in,'mass_flow_tms')
+    set(ax(1), 'XTick', x_stations, 'XTickLabel', labels)
+    xlabel(ax(1),'TMS Station'); ylabel(ax(1),'Mass flow rate [kg/s]');
+    title(ax(1),'Mass flow rate through TMS');
+end
+add_station_line(ax(1), M_dot_arr);
+if ~is_lumped, add_interior_line(ax(1), m_dot_seg); end
+legend(ax(1), 'Location','best');
+figs_out.mass_flow_tms = fig;
+
 end
 
-%% ---- Figure 1: Static pressure through TMS ---- %%
-figure('Name','Static Pressure — TMS Comparison','NumberTitle','off');
-hold on
+%% ---- Local helper: default styling per model type ---- %%
+function style = get_style(model_type, color_override, interior_color_override, ...
+                            marker_override, linestyle_override, lw_override, ms_override)
+    switch lower(model_type)
+        case 'lumped'
+            col = [0.122 0.471 0.706]; icol = [];                      marker = 'o'; ln = '-';  lw = 1.5; ms = 7;
+        case 'discretised'
+            col = [0.839 0.153 0.157]; icol = [0.173 0.627 0.173];     marker = 's'; ln = '--'; lw = 1.5; ms = 7;
+        case 'dns'
+            col = [0.580 0.404 0.741]; icol = [1.000 0.498 0.055];     marker = '^'; ln = ':';  lw = 1.5; ms = 7;
+        case '2d'
+            col = [0.301 0.745 0.933]; icol = [0.494 0.184 0.556];     marker = 'd'; ln = '-.'; lw = 1.5; ms = 7;
+        case '2dns'
+            col = [0.635 0.078 0.184]; icol = [0.929 0.694 0.125];     marker = 'p'; ln = ':';  lw = 1.5; ms = 7;
+        otherwise
+            error('plot_stations:UnknownType', ...
+                'Unknown model_type "%s". Expected lumped | discretised | dns | 2D | 2DNS.', model_type);
+    end
 
-if has_lumped
-    plot(x_stations, P_L/1e3, 'o-', 'Color', col_L, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_L, 'MarkerSize', ms, 'DisplayName', 'Lumped')
-end
-plot(x_stations, P_D/1e3, 's--', 'Color', col_D, 'LineWidth', lw, ...
-     'MarkerFaceColor', col_D, 'MarkerSize', ms, 'DisplayName', 'Discretised')
-plot(x_HX, P_air_seg/1e3, '-', 'Color', col_HX, 'LineWidth', lw, ...
-     'DisplayName', 'Disc. HX interior')
-if has_dns
-    plot(x_stations, P_DNS/1e3, '^:', 'Color', col_DNS, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_DNS, 'MarkerSize', ms, 'DisplayName', 'DNS-based')
-    plot(x_HX_DNS, P_air_seg_DNS/1e3, '-', 'Color', col_HXDNS, 'LineWidth', lw, ...
-         'DisplayName', 'DNS HX interior')
-end
-
-set(gca, 'XTick', x_stations, 'XTickLabel', labels)
-xlabel('TMS Station')
-ylabel('Static pressure [kPa]')
-title('Static pressure through TMS')
-legend('Location', 'best')
-grid on
-
-%% ---- Figure 2: Total pressure through TMS ---- %%
-figure('Name','Total Pressure — TMS Comparison','NumberTitle','off');
-hold on
-
-if has_lumped
-    plot(x_stations, P0_L/1e3, 'o-', 'Color', col_L, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_L, 'MarkerSize', ms, 'DisplayName', 'Lumped')
-end
-plot(x_stations, P0_D/1e3, 's--', 'Color', col_D, 'LineWidth', lw, ...
-     'MarkerFaceColor', col_D, 'MarkerSize', ms, 'DisplayName', 'Discretised')
-plot(x_HX, P_0_air_seg/1e3, '-', 'Color', col_HX, 'LineWidth', lw, ...
-     'DisplayName', 'Disc. HX interior')
-if has_dns
-    plot(x_stations, P0_DNS/1e3, '^:', 'Color', col_DNS, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_DNS, 'MarkerSize', ms, 'DisplayName', 'DNS-based')
-    plot(x_HX_DNS, P_0_air_seg_DNS/1e3, '-', 'Color', col_HXDNS, 'LineWidth', lw, ...
-         'DisplayName', 'DNS HX interior')
+    style.color          = color_override;          if isempty(style.color),          style.color          = col; end
+    style.interior_color = interior_color_override;  if isempty(style.interior_color), style.interior_color = icol; end
+    style.marker         = marker_override;          if isempty(style.marker),         style.marker         = marker; end
+    style.linestyle       = linestyle_override;      if isempty(style.linestyle),      style.linestyle       = ln; end
+    style.lw              = lw_override;             if isempty(style.lw),             style.lw              = lw; end
+    style.ms              = ms_override;             if isempty(style.ms),             style.ms              = ms; end
 end
 
-set(gca, 'XTick', x_stations, 'XTickLabel', labels)
-xlabel('TMS Station')
-ylabel('Total pressure [kPa]')
-title('Total pressure through TMS')
-legend('Location', 'best')
-grid on
-
-%% ---- Figure 3: Static temperature through TMS ---- %%
-figure('Name','Static Temperature — TMS Comparison','NumberTitle','off');
-hold on
-
-if has_lumped
-    plot(x_stations, T_L, 'o-', 'Color', col_L, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_L, 'MarkerSize', ms, 'DisplayName', 'Lumped')
-end
-plot(x_stations, T_D, 's--', 'Color', col_D, 'LineWidth', lw, ...
-     'MarkerFaceColor', col_D, 'MarkerSize', ms, 'DisplayName', 'Discretised')
-plot(x_HX, T_air_seg, '-', 'Color', col_HX, 'LineWidth', lw, ...
-     'DisplayName', 'Disc. HX interior')
-if has_dns
-    plot(x_stations, T_DNS, '^:', 'Color', col_DNS, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_DNS, 'MarkerSize', ms, 'DisplayName', 'DNS-based')
-    plot(x_HX_DNS, T_air_seg_DNS, '-', 'Color', col_HXDNS, 'LineWidth', lw, ...
-         'DisplayName', 'DNS HX interior')
+%% ---- Local helper: default legend labels per model type ---- %%
+function [lbl, interior_lbl] = get_label(model_type, label_override)
+    if ~isempty(label_override)
+        lbl = label_override;
+    else
+        switch lower(model_type)
+            case 'lumped',       lbl = 'Lumped';
+            case 'discretised',  lbl = 'Discretised';
+            case 'dns',          lbl = 'DNS-based';
+            case '2d',           lbl = '2D Discretised';
+            case '2dns',         lbl = '2D DNS-based';
+        end
+    end
+    interior_lbl = [lbl ' HX interior'];
 end
 
-set(gca, 'XTick', x_stations, 'XTickLabel', labels)
-xlabel('TMS Station')
-ylabel('Static temperature [K]')
-title('Static temperature through TMS')
-legend('Location', 'best')
-grid on
-
-%% ---- Figure 4: Velocity through TMS ---- %%
-figure('Name','Velocity — TMS Comparison','NumberTitle','off');
-hold on
-
-if has_lumped
-    plot(x_stations, v_L, 'o-', 'Color', col_L, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_L, 'MarkerSize', ms, 'DisplayName', 'Lumped')
-end
-plot(x_stations, v_D, 's--', 'Color', col_D, 'LineWidth', lw, ...
-     'MarkerFaceColor', col_D, 'MarkerSize', ms, 'DisplayName', 'Discretised')
-plot(x_HX, v_air_seg, '-', 'Color', col_HX, 'LineWidth', lw, ...
-     'DisplayName', 'Disc. HX interior')
-plot(x_HX, v_channel_seg, '--', 'Color', col_HX, 'LineWidth', lw, ...
-     'DisplayName', 'Disc. HX interior channel')
-if has_dns
-    plot(x_stations, v_DNS, '^:', 'Color', col_DNS, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_DNS, 'MarkerSize', ms, 'DisplayName', 'DNS-based')
-    plot(x_HX_DNS, v_air_seg_DNS, '-', 'Color', col_HXDNS, 'LineWidth', lw, ...
-         'DisplayName', 'DNS HX interior')
-    plot(x_HX_DNS, v_channel_seg_DNS, '--', 'Color', col_HXDNS, 'LineWidth', lw, ...
-         'DisplayName', 'DNS HX interior channel')
-end
-
-set(gca, 'XTick', x_stations, 'XTickLabel', labels)
-xlabel('TMS Station')
-ylabel('Velocity [m/s]')
-title('Velocity through TMS')
-legend('Location', 'best')
-grid on
-
-%% ---- Figure 5: Mach number through TMS ---- %%
-figure('Name','Mach Number — TMS Comparison','NumberTitle','off');
-hold on
-
-if has_lumped
-    plot(x_stations, M_L, 'o-', 'Color', col_L, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_L, 'MarkerSize', ms, 'DisplayName', 'Lumped')
-end
-plot(x_stations, M_D, 's--', 'Color', col_D, 'LineWidth', lw, ...
-     'MarkerFaceColor', col_D, 'MarkerSize', ms, 'DisplayName', 'Discretised')
-if has_dns
-    plot(x_stations, M_DNS, '^:', 'Color', col_DNS, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_DNS, 'MarkerSize', ms, 'DisplayName', 'DNS-based')
-end
-
-set(gca, 'XTick', x_stations, 'XTickLabel', labels)
-xlabel('TMS Station')
-ylabel('Mach number [-]')
-title('Mach number through TMS')
-legend('Location', 'best')
-grid on
-
-%% ---- Figure 6: Combined 2x2 summary panel ---- %%
-figure('Name','TMS Summary — Lumped vs Discretised vs DNS','NumberTitle','off');
-
-subplot(2,2,1)
-hold on
-if has_lumped
-    plot(x_stations, P_L/1e3, 'o-', 'Color', col_L, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_L, 'MarkerSize', ms, 'DisplayName', 'Lumped')
-end
-plot(x_stations, P_D/1e3, 's--', 'Color', col_D, 'LineWidth', lw, ...
-     'MarkerFaceColor', col_D, 'MarkerSize', ms, 'DisplayName', 'Discretised')
-plot(x_HX, P_air_seg/1e3, '-', 'Color', col_HX, 'LineWidth', lw, ...
-     'DisplayName', 'Disc. HX interior')
-if has_dns
-    plot(x_stations, P_DNS/1e3, '^:', 'Color', col_DNS, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_DNS, 'MarkerSize', ms, 'DisplayName', 'DNS-based')
-    plot(x_HX_DNS, P_air_seg_DNS/1e3, '-', 'Color', col_HXDNS, 'LineWidth', lw, ...
-         'DisplayName', 'DNS HX interior')
-end
-set(gca, 'XTick', x_stations, 'XTickLabel', labels)
-ylabel('Static pressure [kPa]')
-title('Static pressure')
-legend('Location','best','FontSize',8)
-grid on
-
-subplot(2,2,2)
-hold on
-if has_lumped
-    plot(x_stations, T_L, 'o-', 'Color', col_L, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_L, 'MarkerSize', ms, 'DisplayName', 'Lumped')
-end
-plot(x_stations, T_D, 's--', 'Color', col_D, 'LineWidth', lw, ...
-     'MarkerFaceColor', col_D, 'MarkerSize', ms, 'DisplayName', 'Discretised')
-plot(x_HX, T_air_seg, '-', 'Color', col_HX, 'LineWidth', lw, ...
-     'DisplayName', 'Disc. HX interior')
-if has_dns
-    plot(x_stations, T_DNS, '^:', 'Color', col_DNS, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_DNS, 'MarkerSize', ms, 'DisplayName', 'DNS-based')
-    plot(x_HX_DNS, T_air_seg_DNS, '-', 'Color', col_HXDNS, 'LineWidth', lw, ...
-         'DisplayName', 'DNS HX interior')
-end
-set(gca, 'XTick', x_stations, 'XTickLabel', labels)
-ylabel('Static temperature [K]')
-title('Static temperature')
-legend('Location','best','FontSize',8)
-grid on
-
-subplot(2,2,3)
-hold on
-if has_lumped
-    plot(x_stations, v_L, 'o-', 'Color', col_L, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_L, 'MarkerSize', ms, 'DisplayName', 'Lumped')
-end
-plot(x_stations, v_D, 's--', 'Color', col_D, 'LineWidth', lw, ...
-     'MarkerFaceColor', col_D, 'MarkerSize', ms, 'DisplayName', 'Discretised')
-plot(x_HX, v_air_seg, '-', 'Color', col_HX, 'LineWidth', lw, ...
-     'DisplayName', 'Disc. HX interior')
-if has_dns
-    plot(x_stations, v_DNS, '^:', 'Color', col_DNS, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_DNS, 'MarkerSize', ms, 'DisplayName', 'DNS-based')
-    plot(x_HX_DNS, v_air_seg_DNS, '-', 'Color', col_HXDNS, 'LineWidth', lw, ...
-         'DisplayName', 'DNS HX interior')
-end
-set(gca, 'XTick', x_stations, 'XTickLabel', labels)
-ylabel('Velocity [m/s]')
-title('Velocity')
-legend('Location','best','FontSize',8)
-grid on
-
-subplot(2,2,4)
-hold on
-if has_lumped
-    plot(x_stations, M_L, 'o-', 'Color', col_L, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_L, 'MarkerSize', ms, 'DisplayName', 'Lumped')
-end
-plot(x_stations, M_D, 's--', 'Color', col_D, 'LineWidth', lw, ...
-     'MarkerFaceColor', col_D, 'MarkerSize', ms, 'DisplayName', 'Discretised')
-if has_dns
-    plot(x_stations, M_DNS, '^:', 'Color', col_DNS, 'LineWidth', lw, ...
-         'MarkerFaceColor', col_DNS, 'MarkerSize', ms, 'DisplayName', 'DNS-based')
-end
-set(gca, 'XTick', x_stations, 'XTickLabel', labels)
-ylabel('Mach number [-]')
-title('Mach number')
-legend('Location','best','FontSize',8)
-grid on
-
-sgtitle('TMS Flow Variables — Lumped vs Discretised vs DNS Model', 'FontSize', 12)
-
-%% ---- Figure 7: Mass flow through TMS ---- %%
-figure('Name','Mass Flow — TMS Comparison','NumberTitle','off');
-hold on
-
-% Reconstruct station mass flows from available fields
-m_dot_streamtube_D = results_D.M_dot_2 + results_D.m_spill;
-M_dot_D = [m_dot_streamtube_D, m_dot_streamtube_D, ...
-    results_D.M_dot_2, results_D.M_dot_3, results_D.M_dot_4, ...
-    results_D.M_dot_5, results_D.M_dot_6];
-
-if has_lumped
-    m_dot_streamtube_L = results_L.M_dot_2 + results_L.m_spill;
-    M_dot_L = [m_dot_streamtube_L, m_dot_streamtube_L, ...
-        results_L.M_dot_2, results_L.M_dot_3, results_L.M_dot_4, ...
-        results_L.M_dot_5, results_L.M_dot_6];
-end
-
-if has_dns
-    m_dot_streamtube_DNS = results_DNS.M_dot_2 + results_DNS.m_spill;
-    M_dot_DNS = [m_dot_streamtube_DNS, m_dot_streamtube_DNS, ...
-        results_DNS.M_dot_2, results_DNS.M_dot_3, results_DNS.M_dot_4, ...
-        results_DNS.M_dot_5, results_DNS.M_dot_6];
-end
-
-if has_lumped
-    plot(x_stations, M_dot_L, 'o-', 'Color', col_L, 'LineWidth', lw, ...
-        'MarkerFaceColor', col_L, 'MarkerSize', ms, 'DisplayName', 'Lumped')
-end
-
-plot(x_stations, M_dot_D, 's--', 'Color', col_D, 'LineWidth', lw, ...
-    'MarkerFaceColor', col_D, 'MarkerSize', ms, 'DisplayName', 'Discretised')
-
-% HX interior mass flow through core nodes
-plot(x_HX, results_D.m_dot_seg, '-', 'Color', col_HX, 'LineWidth', lw, ...
-    'DisplayName', 'Disc. HX interior')
-
-if has_dns
-    plot(x_stations, M_dot_DNS, '^:', 'Color', col_DNS, 'LineWidth', lw, ...
-        'MarkerFaceColor', col_DNS, 'MarkerSize', ms, 'DisplayName', 'DNS-based')
-    plot(x_HX_DNS, results_DNS.m_dot_seg, '-', 'Color', col_HXDNS, 'LineWidth', lw, ...
-        'DisplayName', 'DNS HX interior')
-end
-
-set(gca, 'XTick', x_stations, 'XTickLabel', labels)
-xlabel('TMS Station')
-ylabel('Mass flow rate [kg/s]')
-title('Mass flow rate through TMS')
-legend('Location', 'best')
-grid on
-
+%% ---- Local helper: get or create a tagged multi-panel figure ---- %%
+function [fig, ax] = get_or_create_fig(figs_in, key, nrows, ncols, fig_title)
+    if isfield(figs_in, key) && ~isempty(figs_in.(key)) && isvalid(figs_in.(key))
+        fig = figs_in.(key);
+        figure(fig);
+        ax = gobjects(1, nrows*ncols);
+        for i = 1:nrows*ncols
+            found = findobj(fig, 'Type','axes', 'Tag', sprintf('%s_ax%d', key, i));
+            ax(i) = found(1);
+        end
+    else
+        fig = figure('Name', fig_title, 'NumberTitle','off');
+        ax = gobjects(1, nrows*ncols);
+        for i = 1:nrows*ncols
+            ax(i) = subplot(nrows, ncols, i);
+            hold(ax(i), 'on');
+            grid(ax(i), 'on');
+            ax(i).Tag = sprintf('%s_ax%d', key, i);
+        end
+    end
 end
