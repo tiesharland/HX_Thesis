@@ -18,13 +18,16 @@ function figs_out = plot_stations(results, model_type, varargin)
 %   m_dot_seg, N_segments), plotted as a smooth curve between stations
 %   3 and 4; 'lumped' has no interior resolution and is skipped there.
 %
-%   For 2D discretised results, each HX-interior array is
+%   For 2D discretised results, most HX-interior arrays are
 %   (N_segments+1) x N_seg_cool -- one column per coolant-side segment
 %   chain. Only the mean across those columns is plotted, as a single
 %   line with a single legend entry (see minmax below for showing the
 %   first/last chains too). For N_seg_cool == 1 (old iterative 1D, or 2D
 %   trivially run with one column) this is a no-op: the mean of one
-%   column is that column.
+%   column is that column. m_dot_seg is the exception -- air mass flow is
+%   conserved along the duct, so it's always a plain 1 x (N_segments+1)
+%   profile regardless of N_seg_cool, and is plotted as-is (no chains to
+%   collapse).
 %
 % minmax (hard-coded flag, just below): false by default. Set true to
 % also plot the first and last coolant-direction segment chains
@@ -113,17 +116,27 @@ figs_out = figs_in;
     end
 
     %% ---- Nested: HX-interior line (smooth curve between stations 3-4) ---- %%
-    % y is (N_segments+1) x N_seg_cool. For N_seg_cool == 1 this is just
-    % the one column, plotted as before. For N_seg_cool > 1 (2D
-    % discretised), only the mean across columns gets a line + legend
-    % entry; if minmax is true, the first/last columns (coolant-direction
-    % chains) are also drawn, thinner and unlabeled (HandleVisibility
-    % off), so the legend never gets one entry per chain.
+    % Most HX-interior arrays (T_air_seg, P_air_seg, v_air_seg, ...) are
+    % (N_segments+1) x N_seg_cool for 2D discretised results -- one column
+    % per coolant-direction chain. Others (m_dot_seg: mass flow is
+    % conserved along the duct, so it's never split per chain) are always
+    % a plain 1 x (N_segments+1) profile, in EITHER discretisation mode.
+    % So "multi-chain" is decided by y actually being a matrix, not by
+    % which dimension happens to be >1 -- a plain vector is plotted as-is
+    % regardless of orientation, and only a true matrix gets the
+    % mean/minmax chain-collapsing treatment.
     function add_interior_line(ax, y, ln_style, name_suffix)
         if nargin < 3 || isempty(ln_style), ln_style = '-'; end
         if nargin < 4, name_suffix = ''; end
 
-        if size(y, 2) > 1
+        if isvector(y)
+            y_line = y;
+        else
+            % Genuine 2D array: orient so length runs along rows (matching
+            % x_HX) before collapsing columns, in case it came in transposed.
+            if size(y,1) ~= numel(x_HX) && size(y,2) == numel(x_HX)
+                y = y.';
+            end
             if minmax
                 plot(ax, x_HX, y(:,1),   ln_style, 'Color', style.interior_color, ...
                      'LineWidth', max(style.lw*0.5, 0.5), 'HandleVisibility', 'off');
@@ -131,8 +144,6 @@ figs_out = figs_in;
                      'LineWidth', max(style.lw*0.5, 0.5), 'HandleVisibility', 'off');
             end
             y_line = mean(y, 2);
-        else
-            y_line = y;
         end
 
         plot(ax, x_HX, y_line, ln_style, 'Color', style.interior_color, 'LineWidth', style.lw, ...

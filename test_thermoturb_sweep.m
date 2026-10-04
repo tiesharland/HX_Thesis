@@ -6,7 +6,7 @@ clear; clc;
 
 %% ---- Test inputs ---- %%
 
-Pr         = 0.71;
+Pr         = 0.7;
 Tb         = 280;    % K — bulk air temperature
 Tw         = 350;    % K — wall temperature
 flow_model = 'laminar';
