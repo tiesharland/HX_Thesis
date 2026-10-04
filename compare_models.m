@@ -53,6 +53,10 @@ n_modules = 2; %ducts per nacelle
 % tol_T = results_L.T_cool_out - results_L.T_h_o;
 tol_T = 3;
 use_DNS = false;
+N_cool_seg = 0;   % old iterative 1D for this comparison; set >0 to compare against the 2D path instead
+
+solve_T      = 0;
+save_results = true;
 
 N_list = [N_segments];
 
@@ -60,23 +64,89 @@ figs = struct();
 col_D   = autumn(length(N_list));
 col_DNS = winter(length(N_list));
 
-results_L = run_lumped_model(e, r, hx_theta, fan, fpr_init, M_dot_coolant, n_modules, ...
+%%%--- LUMPED MODEL -- check cache, run only if needed ---%%%
+% Same pattern as main_disc_test.m: build the matching key with
+% physical_inputs, look it up (read-only) with find_matching_id, and only
+% load instead of running if BOTH an id match and the actual results file
+% for this variant exist.
+
+inputs_L = physical_inputs(e, r, hx_theta, fan, fpr_init, M_dot_coolant, n_modules, ...
+    Q_tot, T_in_fc, T_out_fc, h, p11, t11, d2_init, AR_diff, AR_noz, V_inf, R, ...
+    flight_phase, M_dot_FOD, M_dot_comp, solve_T);
+
+id_L = find_matching_id(inputs_L);
+
+results_L = [];
+if ~isempty(id_L)
+    candidate_file = fullfile('results', lumped_results_filename(id_L, solve_T));
+    if exist(candidate_file, 'file')
+        fprintf('Found cached results, loading: %s\n', candidate_file);
+        loaded    = load(candidate_file, 'results');
+        results_L = loaded.results;
+    end
+end
+
+if isempty(results_L)
+    results_L = run_lumped_model(e, r, hx_theta, fan, fpr_init, M_dot_coolant, n_modules, ...
         Q_tot, T_in_fc, T_out_fc, h, p11, t11, d2_init, AR_diff, AR_noz, V_inf, R, ...
-        flight_phase, M_dot_FOD, M_dot_comp);
+        flight_phase, M_dot_FOD, M_dot_comp, solve_T, save_results);
+end
+
 figs = plot_stations(results_L, 'lumped', 'figs', figs);
 figs = plot_HX(results_L, 'lumped', 'figs', figs);
 
 for i = 1:length(N_list)
-    results_D = run_disc_model_fwdpass(false, N_list(i), e, r, hx_theta, fan, fpr_init, ...
+
+    %%%--- DISCRETISED MODEL -- check cache, run only if needed ---%%%
+
+    inputs_D = physical_inputs(e, r, hx_theta, fan, fpr_init, M_dot_coolant, n_modules, ...
+        Q_tot, T_in_fc, T_out_fc, h, p11, t11, d2_init, AR_diff, AR_noz, V_inf, R, ...
+        flight_phase, M_dot_FOD, M_dot_comp, solve_T, tol_T);
+
+    id_D = find_matching_id(inputs_D);
+
+    results_D = [];
+    if ~isempty(id_D)
+        candidate_file = fullfile('results', ...
+            disc_results_filename(N_list(i), N_cool_seg, false, id_D, solve_T));
+        if exist(candidate_file, 'file')
+            fprintf('Found cached results, loading: %s\n', candidate_file);
+            loaded    = load(candidate_file, 'results');
+            results_D = loaded.results;
+        end
+    end
+
+    if isempty(results_D)
+        results_D = run_disc_model_fwdpass(false, N_list(i), N_cool_seg, e, r, hx_theta, fan, fpr_init, ...
             M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11, ...
-            d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, tol_T);
+            d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, ...
+            solve_T, save_results, tol_T);
+    end
+
     figs = plot_stations(results_D, 'discretised', 'figs', figs, 'color', col_D(i,:));
     figs = plot_HX(results_D, 'discretised', 'figs', figs, 'color', col_D(i,:));
 
     if use_DNS
-        results_DNS = run_disc_model_fwdpass(true, N_list(i), e, r, hx_theta, fan, fpr_init, ...
+        %%%--- DNS VARIANT -- same physical inputs/id as above, just a
+        %%%     different results file (use_DNS = true) ---%%%
+        results_DNS = [];
+        if ~isempty(id_D)
+            candidate_file_dns = fullfile('results', ...
+                disc_results_filename(N_list(i), N_cool_seg, true, id_D, solve_T));
+            if exist(candidate_file_dns, 'file')
+                fprintf('Found cached results, loading: %s\n', candidate_file_dns);
+                loaded      = load(candidate_file_dns, 'results');
+                results_DNS = loaded.results;
+            end
+        end
+
+        if isempty(results_DNS)
+            results_DNS = run_disc_model_fwdpass(true, N_list(i), N_cool_seg, e, r, hx_theta, fan, fpr_init, ...
                 M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11, ...
-                d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, tol_T);
+                d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, ...
+                solve_T, save_results, tol_T);
+        end
+
         figs = plot_stations(results_DNS, 'dns', 'figs', figs, 'color', col_DNS(i,:));
         figs = plot_HX(results_DNS, 'dns', 'figs', figs, 'color', col_DNS(i,:));
     end
@@ -107,4 +177,3 @@ results_cfd = process_wall_CFD_data(...
 % fprintf("%-30s %-15.4f %-15.4f\n", "Mass flow in [kg/s]", results_L.M_dot_2,     results_D.M_dot_2);
 % fprintf("%-30s %-15.4f %-15.4f\n", "Spillage [kg/s]",     results_L.m_spill,     results_D.m_spill);
 % fprintf("%-30s %-15.2f %-15.2f\n", "Bulk inlet pressure drag [Pa]",     results_L.inlet_dp,     results_D.inlet_dp);
-

@@ -1,6 +1,62 @@
 function results = run_disc_model_fwdpass(use_DNS, N_segments, N_cool_seg, e, r, hx_theta, fan, fpr_init, ...
     M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11, ...
-    d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, tol_T)
+    d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, solve_T, save_results, overwrite, tol_T)
+% run_disc_model_fwdpass  Forward-pass pressure/mass-flow solve for the
+% discretised HX model.
+%
+% N_cool_seg selects the HX_design1_disc algorithm variant (0 = old
+% iterative 1D; >=1 = 2D direct-marching with that many coolant
+% segments -- see HX_design1_disc.m).
+%
+% solve_T: bookkeeping only for now (not yet implemented). If true, the
+% model is intended to solve for the correct exit temperature; if false
+% (current behaviour, and the only behaviour implemented so far), it
+% solves for the specified heat transfer Q_tot. Every existing call site
+% should pass solve_T = 0.
+%
+% save_results: if true, saves this run's results to disk under
+% ./results, keyed into a shared "physical input configuration" index
+% table (results_index.mat) so the SAME id can refer to the results of
+% every model variant (1D / 2D discretised, DNS or not) run at the same
+% physical inputs -- the model variant itself is encoded in the results
+% filename (see disc_results_filename below), not in the table.
+%
+% IMPORTANT: this function always runs the full solve -- it never skips
+% computation, even if a matching results file already exists. The
+% matching-against-results_index step below is purely to decide WHICH id
+% (and therefore which results file) this run's output should be saved
+% as/into; it is not used to decide whether to compute at all. Deciding
+% whether a given physics case is already covered to the caller's
+% satisfaction -- and therefore whether to bother calling
+% run_disc_model_fwdpass at all -- stays the calling script's
+% responsibility.
+%
+% overwrite (hard-coded local flag, just below): controls what happens
+% when save_results is true AND a matching physical-input entry already
+% has a results file for this exact model variant (N_segments,
+% N_cool_seg, use_DNS).
+%   true  (default) -> overwrite that results file in place.
+%   false            -> keep the existing file(s) and save this run as a
+%                        new version alongside them, e.g. the first save
+%                        is a50_3.mat, the next (with
+%                        overwrite = false) is a50_3-1.mat, then
+%                        a50_3-2.mat, etc.
+%
+% The table's columns are every physical input fwdpass takes EXCEPT the
+% model-selector trio (N_segments, N_cool_seg, use_DNS), plus solve_T.
+%
+% t_compute: wall-clock time (s) for the forward solve (freestream /
+% propeller / diffuser setup through the end of the pressure-balance
+% iteration), returned as results.t_compute, so the relative cost of
+% different model variants (N_segments, N_cool_seg, use_DNS) can be
+% roughly compared.
+
+% overwrite = true;   % hard-coded; set to false to version instead of overwrite
+
+results_dir = 'results';
+index_file  = fullfile(results_dir, 'results_index.mat');
+
+t_compute_start = tic;
 
 counter = 1;
 
@@ -63,39 +119,6 @@ m_dot_streamtube = Rho_1*v1*A2;
             d3_loc, T_h_o, n_modules, T_h_i, T_c_i, T_mean_h, ...
             Q_tot, M_dot_coolant, M_dot_3, T3, N_segments, N_cool_seg, tol_T);
 
-        % if N_cool_seg
-        % 
-        %     [dp_coolant_loop, d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, ...
-        %         N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, ...
-        %         v_channel_air, v_channel_coolant, d_h_coolant, A_o_coolant, A_o_air, ...
-        %         Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, ...
-        %         M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, T_cool_seg, dp_cool_seg, ...
-        %         T_air_seg, P_air_seg, v_air_seg, Re_air_seg, Pr_air_seg, v_channel_seg, ...
-        %         K_seg, f_air_seg, Nu_air_seg, h_air_seg, eta_fin_seg, ...
-        %         UA_seg_arr, NTU_seg_arr, eps_seg_arr, Q_seg_arr, dp_seg_arr, ...
-        %         Q_pred_solution, T_h_o_solution, P_0_air_seg, T_0_air_seg, M_air_seg, f_hx_seg, inlet_dp, outlet_dp, ...
-        %         delta_BL_seg, A_free_seg, d_h_bulk_seg, T_mean_c_arr, T_mean_h_arr] = ...
-        %         HX_design1_disc_2d_v2(use_DNS, e, r, hx_theta, counter, A3, v3, R, P3, ...
-        %         d3_loc, T_h_o, n_modules, T_h_i, T_c_i, T_mean_h, ...
-        %         Q_tot, M_dot_coolant, M_dot_3, T3, N_segments, N_cool_seg, tol_T);
-        % else
-        % 
-        %     [dp_coolant_loop, d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, ...
-        %         N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, ...
-        %         v_channel_air, v_channel_coolant, d_h_coolant, A_o_coolant, A_o_air, ...
-        %         Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, ...
-        %         M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, T_cool_seg, dp_cool_seg, ...
-        %         T_air_seg, P_air_seg, v_air_seg, Re_air_seg, Pr_air_seg, v_channel_seg, ...
-        %         K_seg, f_air_seg, Nu_air_seg, h_air_seg, eta_fin_seg, ...
-        %         UA_seg_arr, NTU_seg_arr, eps_seg_arr, Q_seg_arr, dp_seg_arr, ...
-        %         Q_pred_solution, T_h_o_solution, P_0_air_seg, T_0_air_seg, M_air_seg, f_hx_seg, inlet_dp, outlet_dp, ...
-        %         delta_BL_seg, A_free_seg, d_h_bulk_seg, T_mean_c_arr, T_mean_h_arr] = ...
-        %         HX_design1_disc(use_DNS, e, r, hx_theta, counter, A3, v3, R, P3, ...
-        %         d3_loc, T_h_o, n_modules, T_h_i, T_c_i, T_mean_h, ...
-        %         Q_tot, M_dot_coolant, M_dot_3, T3, N_segments, tol_T);
-        % 
-        % end
-
         %--- Fan ---%
         fpr_loc = 1;
         [M5, T5_0, T5, P5, P5_0, v5, A5, dp_fan, P_shaft, M_dot_5] = ...
@@ -140,10 +163,10 @@ m_dot_streamtube = Rho_1*v1*A2;
         state.dp_cool_seg = dp_cool_seg;
         state.P_0_air_seg = P_0_air_seg; state.T_0_air_seg = T_0_air_seg;
         state.M_air_seg = M_air_seg;
-        state.f_hx_seg = f_hx_seg; 
+        state.f_hx_seg = f_hx_seg;
         state.inlet_dp = inlet_dp;
         state.outlet_dp = outlet_dp;
-        state.A_o_air = A_o_air; 
+        state.A_o_air = A_o_air;
         state.N_fin_air = N_fin_air; state.N_fin_coolant = N_fin_coolant;
         state.N_air_pass = N_air_pass; state.N_coolant_pass = N_coolant_pass;
         state.T_h_i = T_h_i; state.T_h_o = T_h_o; state.T_c_i = T_c_i;
@@ -157,10 +180,6 @@ m_dot_streamtube = Rho_1*v1*A2;
 
 %%%--- PRESSURE BALANCE ITERATION ---%%%
 
-% p_loop   = P_inf;
-% diff_P   = Inf;
-% started  = false;
-
 M_dot_in = m_dot_streamtube;
 
 % Turning point detection and initialisation
@@ -173,8 +192,7 @@ diff_P_best   = diff_P;  % track least-negative diff_P seen so far
 M_dot_in_best = M_dot_in;
 state_best      = state;
 
-while abs(diff_P) > 10% || ~started
-    % started = true;
+while abs(diff_P) > 10
 
     % Detect turning point: diff_P worsening after previously improving
     if  abs(diff_P) > abs(diff_P_prev)
@@ -225,13 +243,10 @@ while abs(diff_P) > 10% || ~started
     if fan == "OFF" && M_dot_in > m_dot_streamtube
         error("Mass flow rate into diffuser is not sufficient; Puller fan is needed;")
     end
-    
+
     [diff_P, state] = forward_pass(M_dot_in);
     fprintf("diff_P = %.4f  M_dot_in = %.4f\n", diff_P, M_dot_in);
 
-    % fprintf('P1 = %.2f, P6 = %.2f, diff_P = %.6e, m_dot = %.4f\n', ...
-    %         P1, state.P6, diff_P, M_dot_in);
-    
     % Track best (least negative) operating point
     if abs(diff_P) < abs(diff_P_best)
         diff_P_best   = diff_P;
@@ -243,6 +258,9 @@ end
 
 fprintf('Converged: |P6 - P_inf| = %.4f Pa at M_dot_in = %.4f kg/s\n', ...
         abs(diff_P), M_dot_in);
+
+t_compute = toc(t_compute_start);
+fprintf('Compute time: %.3f s\n', t_compute);
 
 %%%--- COMPUTE m_dot_seg ---%%%
 m_dot_seg = zeros(1, N_segments+1);
@@ -305,6 +323,10 @@ results.T_c_i           = state.T_c_i;
 results.T_h_i           = state.T_h_i;
 results.T_h_o           = state.T_h_o;
 results.N_segments      = N_segments;
+results.N_cool_seg      = N_cool_seg;
+results.use_DNS         = use_DNS;
+results.solve_T         = solve_T;
+results.t_compute       = t_compute;
 results.T_air_seg       = state.T_air_seg;
 results.P_air_seg       = state.P_air_seg;
 results.v_air_seg       = state.v_air_seg;
@@ -329,9 +351,71 @@ results.d_h_air         = state.d_h_air;
 results.delta_BL_seg   = state.delta_BL_seg;
 results.A_free_seg      = state.A_free_seg;
 results.d_h_bulk_seg    = state.d_h_bulk_seg;
-results.T_mean_h_arr = state.T_mean_h_arr; 
+results.T_mean_h_arr = state.T_mean_h_arr;
 results.T_mean_c_arr = state.T_mean_c_arr;
-results.A_o_air = state.A_o_air; 
+results.A_o_air = state.A_o_air;
 results.N_fin_air = state.N_fin_air; results.N_fin_coolant = state.N_fin_coolant;
 results.N_air_pass = state.N_air_pass; results.N_coolant_pass = state.N_coolant_pass;
+
+%%%--- SAVE (unconditional append -- no hit-check; see function header) ---%%%
+if save_results
+
+    if ~exist(results_dir, 'dir')
+        mkdir(results_dir);
+    end
+
+    % Physical input configuration shared across ALL model variants
+    % (everything fwdpass takes EXCEPT the model-selector trio
+    % N_segments/N_cool_seg/use_DNS, plus solve_T) -- built by the shared
+    % helper so a caller doing its own cache lookup (via find_matching_id)
+    % before calling this function builds the exact same key.
+    inputs = physical_inputs(e, r, hx_theta, fan, fpr_init, ...
+        M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11, ...
+        d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, ...
+        solve_T, tol_T);
+
+    if exist(index_file, 'file')
+        loaded = load(index_file, 'results_index');
+        results_index = loaded.results_index;
+    else
+        results_index = table('Size', [0 2], 'VariableTypes', {'double', 'cell'}, ...
+            'VariableNames', {'id', 'inputs'});
+    end
+
+    % Match against existing entries so the same physical-input case
+    % always reuses the same id (and therefore the same results
+    % filename), across however many times it gets saved.
+    id = [];
+    for row = 1:height(results_index)
+        if isequal(results_index.inputs{row}, inputs)
+            id = results_index.id(row);
+            break
+        end
+    end
+
+    if isempty(id)
+        id = height(results_index) + 1;
+        new_row = table(id, {inputs}, 'VariableNames', {'id', 'inputs'});
+        results_index = [results_index; new_row]; %#ok<AGROW>
+        save(index_file, 'results_index');
+    end
+
+    base_fname = disc_results_filename(N_segments, N_cool_seg, use_DNS, id, solve_T);
+
+    if overwrite
+        results_file = fullfile(results_dir, base_fname);
+    else
+        results_file = fullfile(results_dir, ...
+            next_versioned_filename(results_dir, base_fname));
+    end
+
+    save(results_file, 'results');
+    fprintf('Saved results: %s\n', results_file);
 end
+
+end
+
+% disc_results_filename and next_versioned_filename now live in their own
+% files (shared with run_lumped_model.m and any calling script that needs
+% to build/predict a results filename), rather than as local functions
+% here -- see disc_results_filename.m and next_versioned_filename.m.

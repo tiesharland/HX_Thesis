@@ -18,6 +18,21 @@ function figs_out = plot_stations(results, model_type, varargin)
 %   m_dot_seg, N_segments), plotted as a smooth curve between stations
 %   3 and 4; 'lumped' has no interior resolution and is skipped there.
 %
+%   For 2D discretised results, each HX-interior array is
+%   (N_segments+1) x N_seg_cool -- one column per coolant-side segment
+%   chain. Only the mean across those columns is plotted, as a single
+%   line with a single legend entry (see minmax below for showing the
+%   first/last chains too). For N_seg_cool == 1 (old iterative 1D, or 2D
+%   trivially run with one column) this is a no-op: the mean of one
+%   column is that column.
+%
+% minmax (hard-coded flag, just below): false by default. Set true to
+% also plot the first and last coolant-direction segment chains
+% (columns 1 and end of each HX-interior array) alongside the mean, as
+% thinner unlabeled lines (no extra legend entries) in the same
+% interior color/style. Has no visible effect when there's only one
+% column (1D, or 2D with N_cool_seg == 1).
+%
 % Optional name-value pairs:
 %   'figs'           - existing figs struct to add to (default: new struct)
 %   'color'          - override this call's station marker/line color
@@ -35,6 +50,8 @@ function figs_out = plot_stations(results, model_type, varargin)
 %       results_D = run_disc_model_fwdpass(...);
 %       figs = plot_stations(results_D, 'discretised', 'figs', figs, 'color', cmap(i,:));
 %   end
+
+minmax = false;   % hard-coded; set true to also show first/last coolant-direction chains (unlabeled) for 2D results
 
 p = inputParser;
 addParameter(p, 'figs', struct());
@@ -96,10 +113,29 @@ figs_out = figs_in;
     end
 
     %% ---- Nested: HX-interior line (smooth curve between stations 3-4) ---- %%
+    % y is (N_segments+1) x N_seg_cool. For N_seg_cool == 1 this is just
+    % the one column, plotted as before. For N_seg_cool > 1 (2D
+    % discretised), only the mean across columns gets a line + legend
+    % entry; if minmax is true, the first/last columns (coolant-direction
+    % chains) are also drawn, thinner and unlabeled (HandleVisibility
+    % off), so the legend never gets one entry per chain.
     function add_interior_line(ax, y, ln_style, name_suffix)
         if nargin < 3 || isempty(ln_style), ln_style = '-'; end
         if nargin < 4, name_suffix = ''; end
-        plot(ax, x_HX, y, ln_style, 'Color', style.interior_color, 'LineWidth', style.lw, ...
+
+        if size(y, 2) > 1
+            if minmax
+                plot(ax, x_HX, y(:,1),   ln_style, 'Color', style.interior_color, ...
+                     'LineWidth', max(style.lw*0.5, 0.5), 'HandleVisibility', 'off');
+                plot(ax, x_HX, y(:,end), ln_style, 'Color', style.interior_color, ...
+                     'LineWidth', max(style.lw*0.5, 0.5), 'HandleVisibility', 'off');
+            end
+            y_line = mean(y, 2);
+        else
+            y_line = y;
+        end
+
+        plot(ax, x_HX, y_line, ln_style, 'Color', style.interior_color, 'LineWidth', style.lw, ...
              'DisplayName', [interior_lbl name_suffix]);
     end
 
