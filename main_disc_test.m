@@ -94,7 +94,8 @@ results_D        = [];
 loaded_from_cache = false;
 
 if ~isempty(id) && ~force_recompute
-    candidate_file = fullfile('results', ...
+    % Results now live under results/id-<id>/ -- see save_disc_results.m.
+    candidate_file = fullfile('results', sprintf('id-%d', id), ...
         disc_results_filename(N_segments, N_cool_seg, use_DNS, id, solve_T));
     if exist(candidate_file, 'file')
         fprintf('Found cached results, loading: %s\n', candidate_file);

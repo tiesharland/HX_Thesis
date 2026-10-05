@@ -5,7 +5,7 @@ clear; clc;
 %% ---- Grid definition ---- %%
 
 Pr_values = 0.700 : 0.002 : 0.720;   % 11 values
-Tb_values = 264   : 4     : 330;      % 17 values
+Tb_values = 264   : 4     : 330;      % 17 valuesuni
 Tw_values = 340   : 2     : 358;      % 10 values
 % Total: 11 x 17 x 10 x 2 regimes = 3740 queries
 % At ~4.5s per query -> ~4.7 hours

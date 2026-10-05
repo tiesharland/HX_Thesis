@@ -31,16 +31,14 @@ function results = run_disc_model_fwdpass(use_DNS, N_segments, N_cool_seg, e, r,
 % run_disc_model_fwdpass at all -- stays the calling script's
 % responsibility.
 %
-% overwrite (hard-coded local flag, just below): controls what happens
-% when save_results is true AND a matching physical-input entry already
-% has a results file for this exact model variant (N_segments,
-% N_cool_seg, use_DNS).
-%   true  (default) -> overwrite that results file in place.
-%   false            -> keep the existing file(s) and save this run as a
-%                        new version alongside them, e.g. the first save
-%                        is a50_3.mat, the next (with
-%                        overwrite = false) is a50_3-1.mat, then
-%                        a50_3-2.mat, etc.
+% overwrite: controls what happens when save_results is true AND a
+% matching physical-input entry already has a results file for this
+% exact model variant (N_segments, N_cool_seg, use_DNS).
+%   true  -> overwrite that results file in place.
+%   false -> keep the existing file(s) and save this run as a new
+%            version alongside them, e.g. the first save is a50_3.mat,
+%            the next (with overwrite = false) is a50_3-1.mat, then
+%            a50_3-2.mat, etc.
 %
 % The table's columns are every physical input fwdpass takes EXCEPT the
 % model-selector trio (N_segments, N_cool_seg, use_DNS), plus solve_T.
@@ -50,8 +48,6 @@ function results = run_disc_model_fwdpass(use_DNS, N_segments, N_cool_seg, e, r,
 % iteration), returned as results.t_compute, so the relative cost of
 % different model variants (N_segments, N_cool_seg, use_DNS) can be
 % roughly compared.
-
-% overwrite = true;   % hard-coded; set to false to version instead of overwrite
 
 results_dir = 'results';
 index_file  = fullfile(results_dir, 'results_index.mat');
@@ -89,6 +85,16 @@ m_dot_streamtube = Rho_1*v1*A2;
 % from the enclosing workspace via closure.
 
     function [diff_P, state] = forward_pass(M_dot_in)
+
+        % Every call here is one mass-flow/diff_P outer iteration of the
+        % pressure balance loop -- the coarser grouping level for the DNS
+        % query log (plot_thermoturb_coverage.m's mass-flow-iteration
+        % toggle filters on this). It contains however many "sets"
+        % HX_design1_disc's own length search makes (see its
+        % thermoturb_query_log('new_set') call) at this M_dot_in.
+        if use_DNS
+            thermoturb_query_log('new_iter');
+        end
 
         fprintf('M_dot_in = %.4f, m_dot_streamtube = %.4f\n', M_dot_in, m_dot_streamtube)
 
@@ -356,6 +362,14 @@ results.T_mean_c_arr = state.T_mean_c_arr;
 results.A_o_air = state.A_o_air;
 results.N_fin_air = state.N_fin_air; results.N_fin_coolant = state.N_fin_coolant;
 results.N_air_pass = state.N_air_pass; results.N_coolant_pass = state.N_coolant_pass;
+
+% Carry this run's DNS query log along with the results so the coverage
+% plot can be reproduced later from the saved file alone (see
+% plot_thermoturb_coverage's 'log' argument), without having to re-run
+% the model just to repopulate thermoturb_cached's persistent log.
+if use_DNS
+    results.thermoturb_log = thermoturb_query_log('get');
+end
 
 %%%--- SAVE (unconditional append -- no hit-check; see function header) ---%%%
 if save_results

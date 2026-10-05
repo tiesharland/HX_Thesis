@@ -324,7 +324,7 @@ function [v_cool, Re_cool, Pr_cool, dp_cool, h_cool, eta_fin_cool, ...
     R_cool_seg = 1/(h_cool*A_ht_cool_seg*eta_fin_cool);
 end
 
-%% ---- Nested: discretised Q prediction ---- %%
+%% ---- Nested: discretised Q prediction -- ONE function for both paths ---- %%
 
 function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
     % Air flows along L, discretised into N_segments equal slices of dx.
@@ -335,6 +335,17 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
     % (inlet + segment outlets); segment arrays track integrated
     % quantities over each segment. Initialisation and the segment loop
     % are shared; only which calculate_segment_* runs each k differs.
+
+    % Every call to Q_pred_L_disc is one full HX evaluation at a given L
+    % -- the natural "one design run" grouping for the DNS query log
+    % (plot_thermoturb_coverage.m colors by this), whether it makes
+    % exactly N_segments*N_cool_seg queries (2D, one per segment-column
+    % cell) or a variable number (1D, due to each segment's own inner
+    % convergence loop). Marking it here, rather than counting queries
+    % afterward, is what makes the grouping exact for both paths.
+    if use_DNS
+        thermoturb_query_log('new_set');
+    end
 
     dx = L / N_segments;
     dy = b_hx / N_seg_cool;   % == b_hx when N_seg_cool == 1 (1D path)
@@ -385,6 +396,15 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
     function calculate_segment_1d(k)
 
         for inner = 1:max_cool
+
+            % Every pass of this inner coolant-convergence loop is its own
+            % "inner" id (plot_thermoturb_coverage.m's "Inner iterations"
+            % toggle filters on this, within the current "seg") -- the 2D
+            % path has no equivalent loop and never calls this, so its
+            % queries just keep whatever inner id happened to be current.
+            if use_DNS
+                thermoturb_query_log('new_inner');
+            end
 
             T_mean_h_seg = (T_h_i + T_cool_out) / 2;
 
@@ -505,6 +525,15 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
 
         for l = 1:N_seg_cool
 
+            % Every coolant column of this segment's direct march is its
+            % own "col" id (plot_thermoturb_coverage.m's "Coolant segment"
+            % dropdown filters on this, within the current "seg") -- the
+            % 1D path has no columns at all and never calls this, so its
+            % queries just keep whatever col id happened to be current.
+            if use_DNS
+                thermoturb_query_log('new_col');
+            end
+
             T_in = T_air_seg(k,l);      P_in = P_air_seg(k,l);
             rho_in = rho_air_seg(k,l);  v_channel_in = v_channel_seg(k,l);
             Re_in = Re_air_seg(k,l);    Pr_in = Pr_air_seg(k,l);
@@ -614,6 +643,14 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
     %% ---- Segment loop (shared) ---- %%
 
     for k = 1:N_segments
+        % One "seg" per air segment, for BOTH paths -- covers every query
+        % made while computing this segment, whether that's the 2D path's
+        % N_seg_cool columns or the 1D path's however-many inner
+        % convergence-loop passes (each its own "inner" id, see
+        % calculate_segment_1d).
+        if use_DNS
+            thermoturb_query_log('new_seg');
+        end
         if use_2d
             calculate_segment_2d(k);
         else
