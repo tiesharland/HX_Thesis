@@ -595,6 +595,8 @@ else % 3d
     caxis(ax, 'auto');   % rescale color span to whatever's actually shown
 
     draw_wireframe_box(ax, lam_lo, tur_lo, tur_hi, corners, col_box, 'Coverage box (laminar start / DNS end / turbulent end)');
+    draw_re_frame(ax, Re_lam_max, corners, col_dnsend, sprintf('Laminar regime ends (Re = %d)', Re_lam_max));
+    draw_re_frame(ax, Re_tur_min, corners, col_dnsend, sprintf('Turbulent regime starts (Re = %d)', Re_tur_min));
 
     h_hl = [];
     if create_highlight
@@ -914,6 +916,18 @@ for i = 1:n
 end
 
 plot3(ax, nan, nan, nan, '-', 'Color', col, 'LineWidth', 1.5, 'DisplayName', name);
+end
+
+%% ---- Local helper: dashed frame at a constant Re around the hull (3D) ---- %%
+% Same look as the middle ("turbulent DNS data ends") ring of the
+% wireframe box, but at a fixed Re. Used for the laminar/transition/
+% turbulent regime boundaries (Re_lam_max, Re_tur_min).
+function draw_re_frame(ax, re, corners, col, name)
+n = size(corners, 1);
+ring = [1:n 1];
+plot3(ax, re*ones(1, n+1), corners(ring,1), corners(ring,2), '--', ...
+      'Color', col, 'LineWidth', 1.0, 'HandleVisibility', 'off');
+plot3(ax, nan, nan, nan, '--', 'Color', col, 'LineWidth', 1.0, 'DisplayName', name);
 end
 
 %% ---- Local helper: 'on'/'off' for HandleVisibility from a logical ---- %%

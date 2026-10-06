@@ -9,7 +9,7 @@ function results = run_lumped_model(e, r, hx_theta, fan, fpr_init, ...
 % parity with run_disc_model_fwdpass -- see that function's header.
 %
 % save_results: if true, saves this run's results to disk under
-% ./results, keyed into the SAME "physical input configuration" index
+% ./results/id-<id>/, keyed into the SAME "physical input configuration" index
 % table (results_index.mat) used by run_disc_model_fwdpass, so the same
 % id can refer to the lumped model's results and the discretised model's
 % results (1D/2D, DNS or not) at the same physical inputs. The model
@@ -240,9 +240,13 @@ if save_results
     % Match against existing entries so the same physical-input case
     % always reuses the same id, whether it was first saved by this
     % function or by run_disc_model_fwdpass.
+    % The lumped model has no tol_T, so a row of discretised runs with the
+    % same physical inputs (which does carry tol_T) counts as the same case.
     id = [];
     for row = 1:height(results_index)
-        if isequal(results_index.inputs{row}, inputs)
+        si = results_index.inputs{row};
+        if isfield(si, 'tol_T'), si = rmfield(si, 'tol_T'); end
+        if isequal(si, inputs)
             id = results_index.id(row);
             break
         end
@@ -255,13 +259,19 @@ if save_results
         save(index_file, 'results_index');
     end
 
+    % Each id gets its own subfolder: results/id-<id>/
+    id_dir = fullfile(results_dir, sprintf('id-%d', id));
+    if ~exist(id_dir, 'dir')
+        mkdir(id_dir);
+    end
+
     base_fname = lumped_results_filename(id, solve_T);
 
     if overwrite
-        results_file = fullfile(results_dir, base_fname);
+        results_file = fullfile(id_dir, base_fname);
     else
-        results_file = fullfile(results_dir, ...
-            next_versioned_filename(results_dir, base_fname));
+        results_file = fullfile(id_dir, ...
+            next_versioned_filename(id_dir, base_fname));
     end
 
     save(results_file, 'results');

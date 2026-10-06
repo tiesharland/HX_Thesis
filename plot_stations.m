@@ -15,8 +15,22 @@ function figs_out = plot_stations(results, model_type, varargin)
 %   P_inf, P_inf_tot, T_inf, M_inf, V_inf).
 %   'discretised' / 'dns' / '2D' / '2DNS' additionally carry HX-interior
 %   arrays (T_air_seg, P_air_seg, P_0_air_seg, v_air_seg, v_channel_seg,
-%   m_dot_seg, N_segments), plotted as a smooth curve between stations
-%   3 and 4; 'lumped' has no interior resolution and is skipped there.
+%   m_dot_seg, M_air_seg (Mach number), T_0_air_seg, N_segments). The
+%   velocity plotted through the HX is v_channel_seg, the actual air
+%   velocity in the channels (v_air_seg, the equivalent-duct velocity, is not plotted).
+%
+%   One line per call: stations 0, 1, 2, then the HX-interior values (which
+%   start at station 3 and end at station 4), then stations 5 and 6, all
+%   connected. Markers sit on the 7 stations only. 'lumped' has no interior
+%   resolution, so it is the plain 7-station line (3 -> 4 straight).
+%
+%   Default colors match plot_HX (lumped black, discretised red, DNS blue,
+%   2D magenta, 2DNS cyan).
+%
+%   Total temperature at the stations is derived from the stored static
+%   temperature and Mach number (T0 = T*(1+(gamma-1)/2*M^2), gamma from
+%   gamma_air(cp_air(T))) since the results do not store station totals;
+%   the HX interior uses the stored T_0_air_seg.
 %
 %   For 2D discretised results, most HX-interior arrays are
 %   (N_segments+1) x N_seg_cool -- one column per coolant-side segment
@@ -39,7 +53,8 @@ function figs_out = plot_stations(results, model_type, varargin)
 % Optional name-value pairs:
 %   'figs'           - existing figs struct to add to (default: new struct)
 %   'color'          - override this call's station marker/line color
-%   'interior_color' - override this call's HX-interior line color
+%   'interior_color' - ignored (kept so old calls don't error); each call is
+%                       now ONE line in ONE color
 %   'marker'         - override this call's station marker
 %   'linestyle'      - override this call's station line style
 %   'linewidth'      - override this call's LineWidth
@@ -98,56 +113,73 @@ if ~is_lumped
     T_air_seg     = results.T_air_seg;
     P_air_seg     = results.P_air_seg;
     P_0_air_seg   = results.P_0_air_seg;
-    v_air_seg     = results.v_air_seg;
     v_channel_seg = results.v_channel_seg;
     m_dot_seg     = results.m_dot_seg;
+    M_air_seg     = results.M_air_seg;
+    T_0_air_seg   = results.T_0_air_seg;
+else
+    % No interior resolution: empty arrays -> add_station_line draws the
+    % plain 7-station line.
+    T_air_seg = []; P_air_seg = []; P_0_air_seg = [];
+    v_channel_seg = []; m_dot_seg = []; M_air_seg = []; T_0_air_seg = [];
 end
+
+% Station total temperature, derived (see header)
+gam_arr = arrayfun(@(T) gamma_air(cp_air(T)), T_arr);
+T0_arr  = T_arr .* (1 + 0.5*(gam_arr - 1).*M_arr.^2);
 
 x_stations = 0:6;
 labels     = {'0 (\infty)','1','2','3','4','5','6'};
 
 figs_out = figs_in;
 
-    %% ---- Nested: station-level line (marker+line, at the 7 TMS stations) ---- %%
-    function add_station_line(ax, y)
-        plot(ax, x_stations, y, [style.marker style.linestyle], 'Color', style.color, ...
-             'LineWidth', style.lw, 'MarkerFaceColor', style.color, ...
-             'MarkerSize', style.ms, 'DisplayName', lbl);
+    %% ---- Nested: one connected line through the TMS ---- %%
+    % y_st: the 7 station values (stations 0..6). y_int: HX-interior values
+    % (empty for lumped). With an interior, the line runs
+    %   station 0, 1, 2, interior (x = 3 ... 4), station 5, 6
+    % i.e. the interior replaces the straight 3 -> 4 segment (its first and
+    % last points are stations 3 and 4). Markers only on the 7 stations.
+    function add_station_line(ax, y_st, y_int)
+        if nargin < 3, y_int = []; end
+        if isempty(y_int)
+            x_line = x_stations;
+            y_line = y_st;
+            mk_idx = 1:7;
+        else
+            yi = collapse_chains(y_int);
+            n_hx = numel(x_HX);
+            x_line = [0 1 2, x_HX(:)', 5 6];
+            y_line = [y_st(1:3), yi(:)', y_st(6:7)];
+            mk_idx = [1 2 3 4 3+n_hx 4+n_hx 5+n_hx];
+            if minmax && ~isvector(y_int)
+                add_chain_extremes(ax, y_int, '-');
+            end
+        end
+        plot(ax, x_line, y_line, 'LineStyle', style.linestyle, 'Color', style.color, ...
+             'LineWidth', style.lw, 'Marker', style.marker, 'MarkerIndices', mk_idx, ...
+             'MarkerFaceColor', style.color, 'MarkerSize', style.ms, 'DisplayName', lbl);
     end
 
-    %% ---- Nested: HX-interior line (smooth curve between stations 3-4) ---- %%
-    % Most HX-interior arrays (T_air_seg, P_air_seg, v_air_seg, ...) are
-    % (N_segments+1) x N_seg_cool for 2D discretised results -- one column
-    % per coolant-direction chain. Others (m_dot_seg: mass flow is
-    % conserved along the duct, so it's never split per chain) are always
-    % a plain 1 x (N_segments+1) profile, in EITHER discretisation mode.
-    % So "multi-chain" is decided by y actually being a matrix, not by
-    % which dimension happens to be >1 -- a plain vector is plotted as-is
-    % regardless of orientation, and only a true matrix gets the
-    % mean/minmax chain-collapsing treatment.
-    function add_interior_line(ax, y, ln_style, name_suffix)
-        if nargin < 3 || isempty(ln_style), ln_style = '-'; end
-        if nargin < 4, name_suffix = ''; end
+    %% ---- Nested: first/last coolant-direction chain, thin and unlabeled ---- %%
+    function add_chain_extremes(ax, y, ln_style)
+        if size(y,1) ~= numel(x_HX) && size(y,2) == numel(x_HX), y = y.'; end
+        plot(ax, x_HX, y(:,1),   ln_style, 'Color', style.color, ...
+             'LineWidth', max(style.lw*0.5, 0.5), 'HandleVisibility', 'off');
+        plot(ax, x_HX, y(:,end), ln_style, 'Color', style.color, ...
+             'LineWidth', max(style.lw*0.5, 0.5), 'HandleVisibility', 'off');
+    end
 
+    %% ---- Nested: collapse a (N+1) x N_seg_cool array to its mean over the coolant direction ---- %%
+    % A plain vector (e.g. m_dot_seg, or any 1D-path array) is returned as-is.
+    function yc = collapse_chains(y)
         if isvector(y)
-            y_line = y;
+            yc = y;
         else
-            % Genuine 2D array: orient so length runs along rows (matching
-            % x_HX) before collapsing columns, in case it came in transposed.
             if size(y,1) ~= numel(x_HX) && size(y,2) == numel(x_HX)
                 y = y.';
             end
-            if minmax
-                plot(ax, x_HX, y(:,1),   ln_style, 'Color', style.interior_color, ...
-                     'LineWidth', max(style.lw*0.5, 0.5), 'HandleVisibility', 'off');
-                plot(ax, x_HX, y(:,end), ln_style, 'Color', style.interior_color, ...
-                     'LineWidth', max(style.lw*0.5, 0.5), 'HandleVisibility', 'off');
-            end
-            y_line = mean(y, 2);
+            yc = mean(y, 2);
         end
-
-        plot(ax, x_HX, y_line, ln_style, 'Color', style.interior_color, 'LineWidth', style.lw, ...
-             'DisplayName', [interior_lbl name_suffix]);
     end
 
 %% ---- Figure: Static pressure through TMS ---- %%
@@ -157,8 +189,7 @@ if ~isfield(figs_in,'static_pressure')
     xlabel(ax(1),'TMS Station'); ylabel(ax(1),'Static pressure [kPa]');
     title(ax(1),'Static pressure through TMS');
 end
-add_station_line(ax(1), P_arr/1e3);
-if ~is_lumped, add_interior_line(ax(1), P_air_seg/1e3); end
+add_station_line(ax(1), P_arr/1e3, P_air_seg/1e3);
 legend(ax(1), 'Location','best');
 figs_out.static_pressure = fig;
 
@@ -169,8 +200,7 @@ if ~isfield(figs_in,'total_pressure')
     xlabel(ax(1),'TMS Station'); ylabel(ax(1),'Total pressure [kPa]');
     title(ax(1),'Total pressure through TMS');
 end
-add_station_line(ax(1), P0_arr/1e3);
-if ~is_lumped, add_interior_line(ax(1), P_0_air_seg/1e3); end
+add_station_line(ax(1), P0_arr/1e3, P_0_air_seg/1e3);
 legend(ax(1), 'Location','best');
 figs_out.total_pressure = fig;
 
@@ -181,10 +211,20 @@ if ~isfield(figs_in,'static_temperature')
     xlabel(ax(1),'TMS Station'); ylabel(ax(1),'Static temperature [K]');
     title(ax(1),'Static temperature through TMS');
 end
-add_station_line(ax(1), T_arr);
-if ~is_lumped, add_interior_line(ax(1), T_air_seg); end
+add_station_line(ax(1), T_arr, T_air_seg);
 legend(ax(1), 'Location','best');
 figs_out.static_temperature = fig;
+
+%% ---- Figure: Total temperature through TMS ---- %%
+[fig, ax] = get_or_create_fig(figs_in, 'total_temperature', 1, 1, 'Total Temperature — TMS Comparison');
+if ~isfield(figs_in,'total_temperature')
+    set(ax(1), 'XTick', x_stations, 'XTickLabel', labels)
+    xlabel(ax(1),'TMS Station'); ylabel(ax(1),'Total temperature [K]');
+    title(ax(1),'Total temperature through TMS');
+end
+add_station_line(ax(1), T0_arr, T_0_air_seg);
+legend(ax(1), 'Location','best');
+figs_out.total_temperature = fig;
 
 %% ---- Figure: Velocity through TMS ---- %%
 [fig, ax] = get_or_create_fig(figs_in, 'velocity', 1, 1, 'Velocity — TMS Comparison');
@@ -193,23 +233,18 @@ if ~isfield(figs_in,'velocity')
     xlabel(ax(1),'TMS Station'); ylabel(ax(1),'Velocity [m/s]');
     title(ax(1),'Velocity through TMS');
 end
-add_station_line(ax(1), v_arr);
-if ~is_lumped
-    add_interior_line(ax(1), v_air_seg, '-', '');
-    add_interior_line(ax(1), v_channel_seg, '--', ' channel');
-end
+add_station_line(ax(1), v_arr, v_channel_seg);
 legend(ax(1), 'Location','best');
 figs_out.velocity = fig;
 
 %% ---- Figure: Mach number through TMS ---- %%
-% No HX-interior resolution tracked for Mach number - station points only.
 [fig, ax] = get_or_create_fig(figs_in, 'mach_number', 1, 1, 'Mach Number — TMS Comparison');
 if ~isfield(figs_in,'mach_number')
     set(ax(1), 'XTick', x_stations, 'XTickLabel', labels)
     xlabel(ax(1),'TMS Station'); ylabel(ax(1),'Mach number [-]');
     title(ax(1),'Mach number through TMS');
 end
-add_station_line(ax(1), M_arr);
+add_station_line(ax(1), M_arr, M_air_seg);
 legend(ax(1), 'Location','best');
 figs_out.mach_number = fig;
 
@@ -225,10 +260,10 @@ if ~isfield(figs_in,'summary')
     ylabel(ax(3),'Velocity [m/s]');         title(ax(3),'Velocity');
     ylabel(ax(4),'Mach number [-]');        title(ax(4),'Mach number');
 end
-add_station_line(ax(1), P_arr/1e3); if ~is_lumped, add_interior_line(ax(1), P_air_seg/1e3); end
-add_station_line(ax(2), T_arr);     if ~is_lumped, add_interior_line(ax(2), T_air_seg); end
-add_station_line(ax(3), v_arr);     if ~is_lumped, add_interior_line(ax(3), v_air_seg); end
-add_station_line(ax(4), M_arr);
+add_station_line(ax(1), P_arr/1e3, P_air_seg/1e3);
+add_station_line(ax(2), T_arr,     T_air_seg);
+add_station_line(ax(3), v_arr,     v_channel_seg);
+add_station_line(ax(4), M_arr,     M_air_seg);
 for i = 1:4
     legend(ax(i), 'Location','best','FontSize',8);
 end
@@ -241,38 +276,39 @@ if ~isfield(figs_in,'mass_flow_tms')
     xlabel(ax(1),'TMS Station'); ylabel(ax(1),'Mass flow rate [kg/s]');
     title(ax(1),'Mass flow rate through TMS');
 end
-add_station_line(ax(1), M_dot_arr);
-if ~is_lumped, add_interior_line(ax(1), m_dot_seg); end
+add_station_line(ax(1), M_dot_arr, m_dot_seg);
 legend(ax(1), 'Location','best');
 figs_out.mass_flow_tms = fig;
 
 end
 
 %% ---- Local helper: default styling per model type ---- %%
-function style = get_style(model_type, color_override, interior_color_override, ...
+% Colors are the same as plot_HX's defaults (lumped black, discretised
+% autumn(1) = red, DNS winter(1) = blue, 2D spring(1) = magenta, 2DNS
+% cool(1) = cyan).
+function style = get_style(model_type, color_override, ~, ...
                             marker_override, linestyle_override, lw_override, ms_override)
     switch lower(model_type)
         case 'lumped'
-            col = [0.122 0.471 0.706]; icol = [];                      marker = 'o'; ln = '-';  lw = 1.5; ms = 7;
+            col = [0 0 0];  marker = 'o'; ln = '-'; lw = 1.5; ms = 7;
         case 'discretised'
-            col = [0.839 0.153 0.157]; icol = [0.173 0.627 0.173];     marker = 's'; ln = '--'; lw = 1.5; ms = 7;
+            col = autumn(1); col = col(1,:); marker = 's'; ln = '-'; lw = 1.5; ms = 7;
         case 'dns'
-            col = [0.580 0.404 0.741]; icol = [1.000 0.498 0.055];     marker = '^'; ln = ':';  lw = 1.5; ms = 7;
+            col = winter(1); col = col(1,:); marker = '^'; ln = '-'; lw = 1.5; ms = 7;
         case '2d'
-            col = [0.301 0.745 0.933]; icol = [0.494 0.184 0.556];     marker = 'd'; ln = '-.'; lw = 1.5; ms = 7;
+            col = spring(1); col = col(1,:); marker = 'd'; ln = '-'; lw = 1.5; ms = 7;
         case '2dns'
-            col = [0.635 0.078 0.184]; icol = [0.929 0.694 0.125];     marker = 'p'; ln = ':';  lw = 1.5; ms = 7;
+            col = cool(1);   col = col(1,:); marker = 'p'; ln = '-'; lw = 1.5; ms = 7;
         otherwise
             error('plot_stations:UnknownType', ...
                 'Unknown model_type "%s". Expected lumped | discretised | dns | 2D | 2DNS.', model_type);
     end
 
-    style.color          = color_override;          if isempty(style.color),          style.color          = col; end
-    style.interior_color = interior_color_override;  if isempty(style.interior_color), style.interior_color = icol; end
-    style.marker         = marker_override;          if isempty(style.marker),         style.marker         = marker; end
-    style.linestyle       = linestyle_override;      if isempty(style.linestyle),      style.linestyle       = ln; end
-    style.lw              = lw_override;             if isempty(style.lw),             style.lw              = lw; end
-    style.ms              = ms_override;             if isempty(style.ms),             style.ms              = ms; end
+    style.color      = color_override;     if isempty(style.color),      style.color      = col;    end
+    style.marker     = marker_override;    if isempty(style.marker),     style.marker     = marker; end
+    style.linestyle  = linestyle_override; if isempty(style.linestyle),  style.linestyle  = ln;     end
+    style.lw         = lw_override;        if isempty(style.lw),         style.lw         = lw;     end
+    style.ms         = ms_override;        if isempty(style.ms),         style.ms         = ms;     end
 end
 
 %% ---- Local helper: default legend labels per model type ---- %%

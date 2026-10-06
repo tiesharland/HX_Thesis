@@ -15,7 +15,7 @@ function results = run_disc_model_fwdpass(use_DNS, N_segments, N_cool_seg, e, r,
 % should pass solve_T = 0.
 %
 % save_results: if true, saves this run's results to disk under
-% ./results, keyed into a shared "physical input configuration" index
+% ./results/id-<id>/ (see save_disc_results.m), keyed into a shared "physical input configuration" index
 % table (results_index.mat) so the SAME id can refer to the results of
 % every model variant (1D / 2D discretised, DNS or not) run at the same
 % physical inputs -- the model variant itself is encoded in the results
@@ -48,9 +48,6 @@ function results = run_disc_model_fwdpass(use_DNS, N_segments, N_cool_seg, e, r,
 % iteration), returned as results.t_compute, so the relative cost of
 % different model variants (N_segments, N_cool_seg, use_DNS) can be
 % roughly compared.
-
-results_dir = 'results';
-index_file  = fullfile(results_dir, 'results_index.mat');
 
 t_compute_start = tic;
 
@@ -120,7 +117,8 @@ m_dot_streamtube = Rho_1*v1*A2;
             K_seg, f_air_seg, Nu_air_seg, h_air_seg, eta_fin_seg, ...
             UA_seg_arr, NTU_seg_arr, eps_seg_arr, Q_seg_arr, dp_seg_arr, ...
             Q_pred_solution, T_h_o_solution, P_0_air_seg, T_0_air_seg, M_air_seg, f_hx_seg, inlet_dp, outlet_dp, ...
-            delta_BL_seg, A_free_seg, d_h_bulk_seg, T_mean_c_arr, T_mean_h_arr] = ...
+            delta_BL_seg, A_free_seg, d_h_bulk_seg, T_mean_c_arr, T_mean_h_arr, ...
+            h_cool_seg] = ...
             HX_design1_disc(use_DNS, e, r, hx_theta, counter, A3, v3, R, P3, ...
             d3_loc, T_h_o, n_modules, T_h_i, T_c_i, T_mean_h, ...
             Q_tot, M_dot_coolant, M_dot_3, T3, N_segments, N_cool_seg, tol_T);
@@ -164,6 +162,7 @@ m_dot_streamtube = Rho_1*v1*A2;
         state.Re_air_seg = Re_air_seg; state.Pr_air_seg = Pr_air_seg;
         state.f_air_seg = f_air_seg; state.Nu_air_seg = Nu_air_seg;
         state.h_air_seg = h_air_seg;
+        state.h_cool_seg = h_cool_seg;
         state.Q_seg_arr = Q_seg_arr; state.dp_seg_arr = dp_seg_arr;
         state.T_cool_seg = T_cool_seg;
         state.dp_cool_seg = dp_cool_seg;
@@ -342,6 +341,7 @@ results.Pr_air_seg      = state.Pr_air_seg;
 results.f_air_seg       = state.f_air_seg;
 results.Nu_air_seg      = state.Nu_air_seg;
 results.h_air_seg       = state.h_air_seg;
+results.h_cool_seg      = state.h_cool_seg;
 results.Q_seg_arr       = state.Q_seg_arr;
 results.dp_seg_arr      = state.dp_seg_arr;
 results.T_cool_seg      = state.T_cool_seg;
@@ -372,59 +372,13 @@ if use_DNS
 end
 
 %%%--- SAVE (unconditional append -- no hit-check; see function header) ---%%%
+% Saved into results/id-<id>/ by save_disc_results.m (which also builds the
+% physical-input key and assigns/reuses the id in results_index.mat).
 if save_results
-
-    if ~exist(results_dir, 'dir')
-        mkdir(results_dir);
-    end
-
-    % Physical input configuration shared across ALL model variants
-    % (everything fwdpass takes EXCEPT the model-selector trio
-    % N_segments/N_cool_seg/use_DNS, plus solve_T) -- built by the shared
-    % helper so a caller doing its own cache lookup (via find_matching_id)
-    % before calling this function builds the exact same key.
-    inputs = physical_inputs(e, r, hx_theta, fan, fpr_init, ...
+    save_disc_results(results, e, r, hx_theta, fan, fpr_init, ...
         M_dot_coolant, n_modules, Q_tot, T_in_fc, T_out_fc, h, p11, t11, ...
         d2_init, AR_diff, AR_noz, V_inf, R, flight_phase, M_dot_FOD, M_dot_comp, ...
-        solve_T, tol_T);
-
-    if exist(index_file, 'file')
-        loaded = load(index_file, 'results_index');
-        results_index = loaded.results_index;
-    else
-        results_index = table('Size', [0 2], 'VariableTypes', {'double', 'cell'}, ...
-            'VariableNames', {'id', 'inputs'});
-    end
-
-    % Match against existing entries so the same physical-input case
-    % always reuses the same id (and therefore the same results
-    % filename), across however many times it gets saved.
-    id = [];
-    for row = 1:height(results_index)
-        if isequal(results_index.inputs{row}, inputs)
-            id = results_index.id(row);
-            break
-        end
-    end
-
-    if isempty(id)
-        id = height(results_index) + 1;
-        new_row = table(id, {inputs}, 'VariableNames', {'id', 'inputs'});
-        results_index = [results_index; new_row]; %#ok<AGROW>
-        save(index_file, 'results_index');
-    end
-
-    base_fname = disc_results_filename(N_segments, N_cool_seg, use_DNS, id, solve_T);
-
-    if overwrite
-        results_file = fullfile(results_dir, base_fname);
-    else
-        results_file = fullfile(results_dir, ...
-            next_versioned_filename(results_dir, base_fname));
-    end
-
-    save(results_file, 'results');
-    fprintf('Saved results: %s\n', results_file);
+        solve_T, tol_T, N_segments, N_cool_seg, use_DNS, overwrite);
 end
 
 end

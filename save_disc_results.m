@@ -83,6 +83,20 @@ for row = 1:height(results_index)
     end
 end
 
+% A row made by the lumped model has no tol_T but is the same physical case:
+% reuse its id and upgrade the row to the discretised key.
+if isempty(id)
+    key = rmfield(inputs, 'tol_T');
+    for row = 1:height(results_index)
+        if isequal(results_index.inputs{row}, key)
+            id = results_index.id(row);
+            results_index.inputs{row} = inputs;
+            save(index_file, 'results_index');
+            break
+        end
+    end
+end
+
 if isempty(id)
     id = height(results_index) + 1;
     new_row = table(id, {inputs}, 'VariableNames', {'id', 'inputs'});

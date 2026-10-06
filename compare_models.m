@@ -69,7 +69,7 @@ solve_T = 0;
 
 include_lumped = true;
 use_DNS_list   = false;   % [false true] to compare correlation-based vs DNS-based
-N_cool_list    = 0;       % 0 = 1D iterative; e.g. [0 5 10] adds 2D lines
+N_cool_list    = [0 5 10 20 25 30];       % 0 = 1D iterative; e.g. [0 5 10] adds 2D lines
 N_list         = 50;      % e.g. [10 50] to compare air-side resolutions
 
 line_styles = {'-', '--', ':', '-.'};   % one per entry of N_list, in order
@@ -98,19 +98,21 @@ end
 ran_dns_fresh = false;
 
 %%%--- LUMPED MODEL ---%%%
-% Lumped results are keyed without tol_T (see physical_inputs.m).
+% Lumped has no tol_T: the lookup ignores it, so lumped shares the id of the
+% discretised runs of the same physical inputs.
 
 if include_lumped
     inputs_L = physical_inputs(e, r, hx_theta, fan, fpr_init, M_dot_coolant, n_modules, ...
         Q_tot, T_in_fc, T_out_fc, h, p11, t11, d2_init, AR_diff, AR_noz, V_inf, R, ...
         flight_phase, M_dot_FOD, M_dot_comp, solve_T);
 
-    id_L = find_matching_id(inputs_L);
+    id_L = find_matching_id(inputs_L, true);
 
     results_L = [];
     from_cache = false;
     if ~isempty(id_L) && ~force_recompute
-        candidate_file = fullfile('results', lumped_results_filename(id_L, solve_T));
+        % Results live under results/id-<id>/ -- see run_lumped_model.m.
+        candidate_file = fullfile('results', sprintf('id-%d', id_L), lumped_results_filename(id_L, solve_T));
         if exist(candidate_file, 'file')
             fprintf('Found cached results, loading: %s\n', candidate_file);
             loaded     = load(candidate_file, 'results');

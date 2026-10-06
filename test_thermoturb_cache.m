@@ -7,9 +7,9 @@ clear; clc;
 
 %% ---- Fixed conditions ---- %%
 
-Pr = 0.710;
-Tb = 280;    % K — bulk air temperature
-Tw = 350;    % K — wall temperature
+Pr = 0.703;
+Tb = 330;    % K — bulk air temperature
+Tw = 356;    % K — wall temperature
 
 %% ---- Infer Re_tur_actual_min directly from table ---- %%
 

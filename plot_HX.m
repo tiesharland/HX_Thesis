@@ -33,6 +33,7 @@ function figs_out = plot_HX(results, model_type, varargin)
 %   'figs'       - existing figs struct to add to (default: new struct)
 %   'color'      - override this call's line/marker color
 %   'marker'     - override this call's marker (e.g. 'o', '^', 's')
+%   'linestyle'  - override this call's line style (e.g. '--', ':', '-.')
 %   'linewidth'  - override this call's LineWidth
 %   'markersize' - override this call's MarkerSize
 %   'label'      - override this call's legend label
@@ -49,6 +50,7 @@ p = inputParser;
 addParameter(p, 'figs', struct());
 addParameter(p, 'color', []);
 addParameter(p, 'marker', '');
+addParameter(p, 'linestyle', '');
 addParameter(p, 'linewidth', []);
 addParameter(p, 'markersize', []);
 addParameter(p, 'label', '');
@@ -60,7 +62,7 @@ is_lumped = strcmpi(model_type, 'lumped');
 is_cfd    = strcmpi(model_type, 'cfd');
 is_family = ~is_lumped && ~is_cfd;   % discretised / dns / 2D / 2DNS
 
-style = get_style(model_type, p.Results.color, p.Results.marker, p.Results.linewidth, p.Results.markersize);
+style = get_style(model_type, p.Results.color, p.Results.marker, p.Results.linewidth, p.Results.markersize, p.Results.linestyle);
 lbl   = get_label(results, model_type, p.Results.label);
 
 % Shared x-axis positions [mm]
@@ -164,6 +166,88 @@ elseif is_family
 end
 legend(ax(3), 'Location','southeast');
 figs_out.coolant = fig;
+
+%% ---- Figure: Coolant temperature across the width (first vs last air-side segment) ---- %%
+% T_cool_seg is N_segments x (N_seg_cool+1): column 1 is the coolant inlet
+% temperature, column l+1 the coolant temperature after width-wise cell l.
+% Top: first air-side segment; bottom: last.
+%   2D path (N_cool_seg >= 1): just the coolant temperature across the
+%       width. (A cell's mean temperature T_mean_h_arr(k,l) is simply the
+%       average of its inlet/outlet nodes, so it is not drawn separately.)
+%   1D path (N_cool_seg == 0): the coolant has no width resolution, so the
+%       curve is just the two nodes (inlet, outlet) of that segment.
+if is_family
+    [fig, ax] = get_or_create_fig(figs_in, 'coolant_width', 2, 1, 'Coolant Temperature Across Width');
+
+    n_air_seg = size(results.T_cool_seg, 1);
+    x_w       = linspace(0, 1, size(results.T_cool_seg, 2));
+    seg_idx   = [1, n_air_seg];
+    seg_names = {'First air-side segment', 'Last air-side segment'};
+
+    for j = 1:2
+        if ~isfield(figs_in,'coolant_width')
+            if ~isempty(T_h_i), yline(ax(j), T_h_i, '--r', 'DisplayName', 'T_{h,i}', 'LabelHorizontalAlignment','left'); end
+            xlabel(ax(j),'Position across coolant width [-]  (0 = coolant inlet)'); ylabel(ax(j),'Coolant temperature [K]');
+            title(ax(j), seg_names{j});
+        end
+        addline(ax(j), x_w, results.T_cool_seg(seg_idx(j), :));
+        legend(ax(j), 'Location','best');
+    end
+    figs_out.coolant_width = fig;
+end
+
+%% ---- Figure: Coolant-side thermal performance (h, q) ---- %%
+% Same calculation as the air-side 'HX Thermal Performance' figure, vs
+% position along the HX (width-averaged per air-side segment):
+%   h : coolant-side heat transfer coefficient (results.h_cool_seg)
+%   q : h_cool*(T_cool - T_air), cell-averaged, same as the air-side q
+% Only drawn if the results contain h_cool_seg (results saved before it was
+% stored don't have it).
+if is_family && isfield(results, 'h_cool_seg')
+    [fig, ax] = get_or_create_fig(figs_in, 'coolant_thermal', 2, 1, 'HX Coolant Thermal Performance');
+    if ~isfield(figs_in,'coolant_thermal')
+        xlabel(ax(1),'Position along HX [mm]'); ylabel(ax(1),'h [W/m^2K]');
+        title(ax(1),'Coolant-side heat transfer coefficient through HX');
+        xlabel(ax(2),'Position along HX [mm]'); ylabel(ax(2),'q [kW/m^2]');
+        title(ax(2),'Coolant-side heat flux through HX');
+    end
+    addline(ax(1), xm, mean(results.h_cool_seg, 2));
+    q_cool = mean(results.h_cool_seg.*(movmean(results.T_cool_seg,2,2,'Endpoints','discard') - ...
+                  movmean(results.T_air_seg,2,'Endpoints','discard')), 2)/1000;
+    addline(ax(2), xm, q_cool);
+    for j = 1:2, legend(ax(j), 'Location','best'); end
+    figs_out.coolant_thermal = fig;
+end
+
+%% ---- Figure: Cumulative heat rejection across the coolant width (first vs last air-side segment) ---- %%
+% Q_seg_arr(k,l) is the heat transferred in width-wise cell l of air-side
+% segment k. Plotted cumulatively across the width, like the air-side
+% cumulative heat rejection along the length: 0 at the coolant inlet side,
+% the segment's total heat transfer at the far side.
+%   2D (N_cool_seg >= 1): one point per cell edge (cumulative sum of cells).
+%   1D (N_cool_seg == 0): a single cell, so a straight line from 0 to the
+%       segment's total Q.
+% Top: first air-side segment; bottom: last.
+if is_family
+    [fig, ax] = get_or_create_fig(figs_in, 'q_width', 2, 1, 'Cumulative Heat Rejection Across Width');
+
+    n_air_seg = size(results.Q_seg_arr, 1);
+    n_cells   = size(results.Q_seg_arr, 2);
+    seg_idx   = [1, n_air_seg];
+    seg_names = {'First air-side segment', 'Last air-side segment'};
+    edges     = linspace(0, 1, n_cells+1);
+
+    for j = 1:2
+        if ~isfield(figs_in,'q_width')
+            xlabel(ax(j),'Position across coolant width [-]  (0 = coolant inlet)');
+            ylabel(ax(j),'\Delta Q [kW]');
+            title(ax(j), seg_names{j});
+        end
+        addline(ax(j), edges, [0, cumsum(results.Q_seg_arr(seg_idx(j), :))]/1000);
+        legend(ax(j), 'Location','best');
+    end
+    figs_out.q_width = fig;
+end
 
 %% ---- Figure: Air Flow Variables (v, Re, Pr) ---- %%
 [fig, ax] = get_or_create_fig(figs_in, 'flow', 3, 1, 'HX Air Flow Variables');
@@ -355,7 +439,7 @@ end
 end
 
 %% ---- Local helper: default styling per model type ---- %%
-function style = get_style(model_type, color_override, marker_override, lw_override, ms_override)
+function style = get_style(model_type, color_override, marker_override, lw_override, ms_override, ls_override)
     switch lower(model_type)
         case 'lumped'
             cmap = [0 0 0]; marker = 's'; lw = 1.5; ms = 6; ln = '-';
@@ -378,7 +462,7 @@ function style = get_style(model_type, color_override, marker_override, lw_overr
     style.marker = marker_override; if isempty(style.marker), style.marker = marker; end
     style.lw     = lw_override;     if isempty(style.lw),     style.lw     = lw;     end
     style.ms     = ms_override;     if isempty(style.ms),     style.ms     = ms;     end
-    style.line   = ln;
+    style.line   = ln;  if ~isempty(ls_override), style.line = ls_override; end
 end
 
 %% ---- Local helper: default legend label per model type ---- %%
