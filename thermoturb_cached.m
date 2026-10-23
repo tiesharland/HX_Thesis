@@ -1,4 +1,4 @@
-function [Re_out, Nu_out, Cf_out] = thermoturb_cached(Re_bulk, Pr, Tb, Tw)
+function [Re_out, Nu_out, Cf_out] = thermoturb_cached(Re_bulk, Pr, Tb, Tw, d_h, L)
 
     % Set true to log every query (Re/Pr/Tb/Tw, regime, and whether each
     % dimension fell outside the DNS table's coverage) via
@@ -191,6 +191,8 @@ function [Re_out, Nu_out, Cf_out] = thermoturb_cached(Re_bulk, Pr, Tb, Tw)
         % Extrapolates linearly below Re_tur_actual_min down to Re_tur_min
         [Nu_out, Cf_out] = lookup_pair(Re_bulk, Re_mat_tur, Nu_mat_tur, Cf_mat_tur, npts_tur, ...
                                         Pr_rng_tur, Tb_rng_tur, Tw_rng_tur, F_Nu_tur, F_Cf_tur);
+        
+        Nu_out = Nu_out*(1 + 1/3*(d_h/L)^(2/3));
 
         regime_tag = 1;
         Re_extrap  = Re_bulk < Re_tur_rng(1) || Re_bulk > Re_tur_rng(2);
@@ -209,6 +211,8 @@ function [Re_out, Nu_out, Cf_out] = thermoturb_cached(Re_bulk, Pr, Tb, Tw)
                                         Pr_rng_lam, Tb_rng_lam, Tw_rng_lam, F_Nu_lam, F_Cf_lam);
         [Nu_tur, Cf_tur] = lookup_pair(Re_bulk, Re_mat_tur, Nu_mat_tur, Cf_mat_tur, npts_tur, ...
                                         Pr_rng_tur, Tb_rng_tur, Tw_rng_tur, F_Nu_tur, F_Cf_tur);
+
+        Nu_tur = Nu_tur*(1 + 1/3*(d_h/L)^(2/3));
 
         Nu_out = (1-w)*Nu_lam + w*Nu_tur;
         Cf_out = (1-w)*Cf_lam + w*Cf_tur;

@@ -17,7 +17,7 @@ for i = 1:1
 
     for j = 1:1
 
-        d2_init = [0.46]; %m, diffuser inlet initial guess
+        d2_init = [0.52]; %m, diffuser inlet initial guess
         A2 = pi*d2_init*d2_init/4;
         A_frontal_target = A2*4; %this number multiplied to A2 is your diffuser AR
         d3_target = sqrt(A_frontal_target.*4/pi);
@@ -125,8 +125,8 @@ Pr_air = mu_air(T_mean_c)*cp_air(T_mean_c)/k_air(T_mean_c);
 
 %%%----------------------------------------------- Sizing function ----------------------------------------------%%%
 x=1;
-e = 8; %this is a multiplier fed into HX sizing function to indicate air-side fin size (1 = 1mm)
-r = 4.2; %this is a multiplier fed into HX sizing function to indicate coolant-side fin size (1 = 1mm)
+e = 4 - 2*0.1*2/sqrt(3); %this is a multiplier fed into HX sizing function to indicate air-side fin size (1 = 1mm)
+r = 4 - 2*0.1*2/sqrt(3); %this is a multiplier fed into HX sizing function to indicate coolant-side fin size (1 = 1mm)
 [dp_coolant,d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, v_channel_air, v_channel_coolant,d_h_coolant, A_o_coolant, A_o_air, Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, Q_pred_sol, T_cool_out, Pr_air, f_air, Nu_air, inlet_dp] = HX_design1(e,r,hx_theta, counter, x ,A3,v3, R,P3,P3_0, h, d3, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant, M_dot_3, T3);         
 coolant_pres_drop(i,j) = dp_coolant;
 HX_dp (i,j) = dp_hx;

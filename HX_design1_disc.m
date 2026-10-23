@@ -142,13 +142,11 @@ m_dot_pass_cool    = M_dot_coolant / N_coolant_pass;
 
 A_p_coolant   = (b_t_coolant*0.5) + ((b_t_coolant*0.5)+(t_fin/sqrt(2)));
 A_f_coolant   = sqrt(ht_coolant^2+(b_t_coolant*0.5)^2) + ...
-    sqrt(((b_t_coolant*0.5)+(t_fin/sqrt(2)))^2 + ...
-    (ht_coolant+(t_fin/sqrt(2)))^2);
+                sqrt(((b_t_coolant*0.5)+(t_fin/sqrt(2)))^2 + (ht_coolant+(t_fin/sqrt(2)))^2);
 
 A_p_air      = (b_t_air*0.5) + ((b_t_air*0.5)+(t_fin/sqrt(2)));
 A_f_air      = sqrt(ht_air^2+(b_t_air*0.5)^2) + ...
-    sqrt(((b_t_air*0.5)+(t_fin/sqrt(2)))^2 + ...
-    (ht_air+(t_fin/sqrt(2)))^2);
+               sqrt(((b_t_air*0.5)+(t_fin/sqrt(2)))^2 + (ht_air+(t_fin/sqrt(2)))^2);
 
 % Collapses to the 1D path's original (unscaled) formula when
 % N_seg_cool == 1 -- no if/else needed.
@@ -260,21 +258,22 @@ function [Nu_seg, h_air_loc, eta_fin_loc, R_air_loc, f_out_dns] = ...
     f_out_dns = [];
     if use_DNS
         % DNS lookup: Nu and Cf from thermoturb table
-        [~, Nu_seg, Cf_seg] = thermoturb_cached(Re_in, Pr_in, T_in, T_hot_ref);
-        f_out_dns = 4*Cf_seg;   % Fanning -> d_h-based
+        [~, Nu_seg, Cf_seg] = thermoturb_cached(Re_in, Pr_in, T_in, T_hot_ref, d_h_bulk, dx*k_idx);
+        % f_out_dns = 4*Cf_seg;   % Fanning -> d_h-based
+        f_out_dns = Cf_seg;
     else
         % Use correlations for Nu
         if Re_in < 2300
             Nu_seg = 3.66;
         elseif Re_in < 3000
             w       = (Re_in-2300)/(3000-2300);
-            Nu_turb = (f_in/2)*(Re_in-1000)*Pr_in* ...
-                      (1+(d_h_bulk/(dx*k_idx))^(2/3))*K_ratio / ...
+            Nu_turb = (f_in/2)*(Re_in-1000)*Pr_in*K_ratio* ...
+                      (1 + 1/3*(d_h_bulk/(dx*k_idx))^(2/3)) / ...% (1+(d_h_bulk/(dx*k_idx))^(2/3)) / ...
                       (1+12.7*sqrt(f_in/2)*(Pr_in^(2/3)-1));
             Nu_seg  = (1-w)*3.66 + w*Nu_turb;
         else
-            Nu_seg  = (f_in/2)*(Re_in-1000)*Pr_in* ...
-                      (1+(d_h_bulk/(dx*k_idx))^(2/3))*K_ratio / ...
+            Nu_seg  = (f_in/2)*(Re_in-1000)*Pr_in*K_ratio* ...
+                      (1 + 1/3*(d_h_bulk/(dx*k_idx))^(2/3)) / ...% (1+(d_h_bulk/(dx*k_idx))^(2/3)) / ...
                       (1+12.7*sqrt(f_in/2)*(Pr_in^(2/3)-1));
         end
     end
@@ -298,9 +297,9 @@ end
 
 function [v_cool, Re_cool, Pr_cool, dp_cool, h_cool, eta_fin_cool, ...
           A_ht_cool_seg, R_cool_seg] = ...
-        calculate_coolant_side(T_cool_ref, N_fin_cool, flow_length, area_scale)
+        calculate_coolant_side(T_cool_ref, flow_length, N_fin_cool, area_scale)
 
-    v_cool  = (m_dot_pass_cool/N_segments/(2*N_fin_cool)) / (rho_EG(T_cool_ref)*A_o_coolant);
+    v_cool  = (m_dot_pass_cool/N_fin_cool) / (rho_EG(T_cool_ref)*A_o_coolant);
     Re_cool = rho_EG(T_cool_ref)*v_cool*d_h_coolant / mu_EG(T_cool_ref);
     Pr_cool = mu_EG(T_cool_ref)*cp_EG_50_50(T_cool_ref)/k_EG(T_cool_ref);
     f_cool  = (1/(-1.8*log10((0.0015/d_h_coolant)^1.11 + (6.9/Re_cool))))^2;
@@ -320,7 +319,7 @@ function [v_cool, Re_cool, Pr_cool, dp_cool, h_cool, eta_fin_cool, ...
     eta_fin_cool = tanh(m_cool*ht_coolant)/(m_cool*ht_coolant);
 
     A_ht_cool_seg = ((A_f_coolant*N_fin_cool*N_coolant_pass) + ...
-        (A_p_coolant*N_fin_cool*N_coolant_pass)) * area_scale;
+        (A_p_coolant*N_fin_cool*N_coolant_pass)) * flow_length * area_scale;
 
     R_cool_seg = 1/(h_cool*A_ht_cool_seg*eta_fin_cool);
 end
@@ -385,8 +384,9 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
 
     %% ---- Geometry ---- %%
 
-    N_fin_cool   = 2*dx/(2*t_fin/sqrt(2)+b_t_coolant);
-    A_ht_air_seg = 3*b_t_air*2*N_fin_air*N_air_pass*dx/N_seg_cool;  % == no /N_seg_cool when N_seg_cool==1
+    N_fin_cool   = 2*L/(2*t_fin/sqrt(2)+b_t_coolant);
+    % A_ht_air_seg = 3*b_t_air*2*N_fin_air*N_air_pass*dx/N_seg_cool;  % == no /N_seg_cool when N_seg_cool==1
+    A_ht_air_seg = (((A_f_air*N_fin_air*N_air_pass) + (A_p_air*N_fin_air*N_air_pass))*dx/N_seg_cool); %m^2; total heat transfer area
 
     %% ---- Nested: one segment's physics, OLD ITERATIVE 1D ---- %%
     % T_in/P_in/rho_in/v_channel_in/Re_in/Pr_in/f_in/f_hx_in and
@@ -410,9 +410,9 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
             T_mean_h_seg = (T_h_i + T_cool_out) / 2;
 
             [v_cool, Re_cool, ~, dp_cool, h_cool, ~, ~, R_cool_seg] = ...
-                calculate_coolant_side(T_mean_h_seg, N_fin_cool, dy, 1/N_seg_cool);
+                calculate_coolant_side(T_mean_h_seg, dy, N_fin_cool, 1/N_segments);
 
-            K_ratio = T_mean_h_seg / T_in;
+            K_ratio = T_in / T_mean_h_seg; % T_mean_h_seg / T_in;
             C_c     = m_dot_air/N_seg_cool*cp_air(T_in);
             C_h     = M_dot_coolant/N_segments*cp_EG_50_50(T_mean_h_seg);
             C_min   = min(C_c, C_h);
@@ -450,10 +450,11 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
             Pr_out = mu_air(T_out)*cp_air(T_out)/k_air(T_out);
             if use_DNS
                 f_out = f_out_dns;
+                f_hx_out = 4 * f_out_dns;
             else
                 f_out = 0.25*((1.8*log10(Re_out))-1.5)^(-2); %Konakov et al as cited in Mortean et.al 2019
+                f_hx_out = (1/(-2*log10(2.7*log10(Re_out)^1.2/Re_out+(sr/d_h_air)/3.71)))^2; % As cited in Gerl et. al 2025
             end
-            f_hx_out = (1/(-2*log10(2.7*log10(Re_out)^1.2/Re_out+(sr/d_h_air)/3.71)))^2; % As cited in Gerl et. al 2025
 
             difference = T_cool_out - T_cool_out_old;
             if abs(difference) >= tol_cool
@@ -543,9 +544,9 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
             T_in_cool = T_cool_seg(k,l);
 
             [v_cool, Re_cool, ~, dp_cool, h_cool, ~, ~, R_cool_seg] = ...
-                calculate_coolant_side(T_in_cool, N_fin_cool, dy, 1/N_seg_cool);
+                calculate_coolant_side(T_in_cool, dy, N_fin_cool, 1/N_segments);
 
-            K_ratio = T_in_cool / T_in;
+            K_ratio = T_in / T_in_cool; %T_in_cool / T_in;
             C_c     = m_dot_air/N_seg_cool*cp_air(T_in);
             C_h     = M_dot_coolant/N_segments*cp_EG_50_50(T_in_cool);
             C_min   = min(C_c, C_h);
@@ -582,10 +583,11 @@ function [Q_total, T_h_o_predicted] = Q_pred_L_disc(L)
             Pr_out = mu_air(T_out)*cp_air(T_out)/k_air(T_out);
             if use_DNS
                 f_out = f_out_dns;
+                f_hx_out = 4 * f_out_dns;
             else
                 f_out = 0.25*((1.8*log10(Re_out))-1.5)^(-2); %Konakov et al as cited in Mortean et.al 2019
+                f_hx_out = (1/(-2*log10(2.7*log10(Re_out)^1.2/Re_out+(sr/d_h_air)/3.71)))^2; % As cited in Gerl et. al 2025
             end
-            f_hx_out = (1/(-2*log10(2.7*log10(Re_out)^1.2/Re_out+(sr/d_h_air)/3.71)))^2; % As cited in Gerl et. al 2025
 
             % Mean-temperature outputs: same style of calculation 1D
             % uses, now populated here too (previously hardcoded to 0).
@@ -692,7 +694,7 @@ end
 fprintf("Total heat loss per module = %f W\n", Q_tot/n_modules);
 
 L_low  = 1e-3;
-L_high = 1;
+L_high = 0.5;
 
 while true
 
@@ -795,8 +797,7 @@ M_dot_4 = rho_air(P4,T4)*A4*v4;
 
 A_p_air_out    = (b_t_air*0.5) + ((b_t_air*0.5)+(t_fin/sqrt(2)));
 A_f_air_out    = sqrt(ht_air^2+(b_t_air*0.5)^2) + ...
-                 sqrt(((b_t_air*0.5)+(t_fin/sqrt(2)))^2 + ...
-                      (ht_air+(t_fin/sqrt(2)))^2);
+                 sqrt(((b_t_air*0.5)+(t_fin/sqrt(2)))^2 + (ht_air+(t_fin/sqrt(2)))^2);
 A_ht_air_total = ((A_f_air_out*N_fin_air*N_air_pass) + ...
                   (A_p_air_out*N_fin_air*N_air_pass))*L_solution;
 

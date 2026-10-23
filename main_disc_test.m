@@ -3,9 +3,9 @@ clc
 
 counter = 1;
 
-e = 4 - 2*0.1/sqrt(2);
-r = 4 - 2*0.1/sqrt(2);
-d2_init = 0.48; %0.45808;
+e = 4 - 2*0.1*2/sqrt(3);
+r = 4 - 2*0.1*2/sqrt(3);
+d2_init = 0.52; %0.45808;
 AR_diff = 3.8;
 AR_noz  = 0.36;
 A2      = pi*d2_init*d2_init/4;
@@ -58,9 +58,9 @@ AR_init = AR_diff_arr;
 fan  = "OFF";
 disc = "ON";
 N_segments = 50;
-N_cool_seg = 0;
+N_cool_seg = floor(sqrt(A_frontal_target/cosd(hx_theta))/((2*1e-4/sqrt(2))+1e-3*e));
 tol_T = 0; % K
-use_DNS = true;
+use_DNS = false;
 solve_T = 0;
 save_results = true;
 overwrite = false;
@@ -138,8 +138,8 @@ fprintf("d_h / L                        = %f \n", results_D.d_h_air/results_D.L_
 
 %%%--- PLOTS ---%%%
 
-figs = plot_stations(results_D, 'discretised');
-figs = plot_HX(results_D, 'discretised', 'figs', figs);
+% figs = plot_stations(results_D, 'discretised');
+% figs = plot_HX(results_D, 'discretised', 'figs', figs);
 
 if use_DNS
     if loaded_from_cache

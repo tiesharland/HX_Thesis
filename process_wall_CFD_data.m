@@ -1,4 +1,4 @@
-function results = process_wall_CFD_data(q_file, Twall_file, Tbulk_file, Pbulk_file, Vmag_file, mdot_file, d_h_air)
+function results = process_wall_CFD_data(q_file, Twall_file, Tbulk_file, Pbulk_file, Vmag_file, mdot_file, d_h, varargin)
 % process_wall_CFD_data  Turn Fluent Surface Integral Report exports
 % (q_air, Twall_air, Tbulk_air, Pbulk, Vmag_air, mass flow rate vs a
 % shared z-station grid) into a station-by-station h(z) / Nu(z) table
@@ -12,12 +12,23 @@ function results = process_wall_CFD_data(q_file, Twall_file, Tbulk_file, Pbulk_f
 %                                    '4by4_150ch_wall_Tbulk_air', ...
 %                                    '4by4_150ch_wall_Pbulk', ...
 %                                    '4by4_150ch_wall_Vmag_air', ...
-%                                    '4by4_150ch_wall_mdot_air', d_h_air);
+%                                    '4by4_150ch_wall_mdot_air', d_h);
 %   (mdot_file name assumed to follow the same convention as the others -
 %   adjust if your actual export uses a different name.)
 %
-% d_h_air: hydraulic diameter [m] - pass the same value your discretised
+% d_h: hydraulic diameter [m] - pass the same value your discretised
 % model uses, so Nu(z) is directly comparable.
+%
+% Optional name-value exports (same z-stations as the others):
+%   'rho'   : bulk density file          -> results.rho
+%   'mu'    : bulk dynamic viscosity     -> results.mu
+%   'tau'   : wall shear stress          -> results.tau (magnitude)
+%   'yplus' : wall y+                    -> results.yplus
+%   'k_fun' : conductivity function k(T) for Nu (default @k_air; @k_EG for coolant)
+% Derived when the needed files are given:
+%   results.Cf = |tau| / (0.5*rho*Vmag^2)   (Fanning, needs tau, rho)
+%   results.Re = rho*Vmag*d_h/mu            (needs rho, mu)
+% Compare Cf with the model's f/4 (f is Darcy).
 %
 % Requires k_air(T) to be on the MATLAB path (same one used elsewhere in
 % the project) for the Nusselt number calculation.
@@ -49,6 +60,22 @@ function results = process_wall_CFD_data(q_file, Twall_file, Tbulk_file, Pbulk_f
 [z_pb, Pbulk] = read_fluent_report(Pbulk_file);
 [z_v, Vmag]   = read_fluent_report(Vmag_file);
 [z_m, mdot_raw] = read_fluent_report(mdot_file);
+ip = inputParser;
+addParameter(ip, 'rho', []);  addParameter(ip, 'mu', []);
+addParameter(ip, 'tau', []);  addParameter(ip, 'yplus', []);
+addParameter(ip, 'k_fun', @k_air);
+parse(ip, varargin{:});
+k_fun = ip.Results.k_fun;
+extra = struct();
+for nm = {'rho', 'mu', 'tau', 'yplus'}
+    f = ip.Results.(nm{1});
+    if isempty(f), continue, end
+    [z_x, v_x] = read_fluent_report(f);
+    if ~isequal(z_q, z_x)
+        error('process_wall_CFD_data:zMismatch', 'The %s file reports different z-stations than the other exports.', nm{1});
+    end
+    extra.(nm{1}) = v_x;
+end
 
 if ~isequal(z_q, z_Tw) || ~isequal(z_q, z_tb) || ~isequal(z_q, z_pb) || ...
         ~isequal(z_q, z_v) || ~isequal(z_q, z_m)
@@ -60,7 +87,7 @@ z = z_q;
 
 dT = Twall - Tbulk;
 h  = q ./ dT;
-Nu = h * d_h_air ./ arrayfun(@k_air, Tbulk);
+Nu = h * d_h ./ arrayfun(k_fun, Tbulk);
 
 % Inlet-referenced static pressure: shift so z=0 (inlet, first row since
 % read_fluent_report sorts descending) reads zero, cancelling Fluent's
@@ -95,7 +122,7 @@ dT_out   = Tw_mean - T_bulk_out;
 dT_lm    = (dT_in - dT_out) / log(dT_in/dT_out);
 q_bar    = mean(q(~is_entrance));       % or substitute Fluent's reported "Net" value directly
 h_bar_lmtd  = q_bar / dT_lm;
-Nu_bar_lmtd = h_bar_lmtd * d_h_air / k_air(mean(Tbulk(~is_entrance)));
+Nu_bar_lmtd = h_bar_lmtd * d_h / k_fun(mean(Tbulk(~is_entrance)));
 
 fprintf('\n--- Summary (z=0 entrance station excluded from h/Nu averages only) ---\n');
 fprintf('z=0 entrance-station h         = %.2f W/m2K  (expect mesh-dependent, informational only)\n', h(is_entrance));
@@ -124,6 +151,18 @@ results.Pbulk   = Pbulk;     % raw CFD gauge static pressure (Fluent's operating
 results.dP_bulk = dP_bulk;   % shifted, inlet-referenced (z=0 -> 0), <= 0 downstream
 results.Vmag    = Vmag;      % bulk (mass-weighted average) velocity magnitude
 results.mdot    = mdot;      % bulk mass flow rate, sign-corrected to positive
+if isfield(extra, 'rho'),   results.rho = extra.rho; end          % bulk air/coolant density [kg/m^3]
+if isfield(extra, 'mu'),    results.mu = extra.mu; end
+if isfield(extra, 'yplus'), results.yplus = extra.yplus; end
+if isfield(extra, 'tau')
+    results.tau = abs(extra.tau);                                  % wall shear stress magnitude [Pa]
+    if isfield(extra, 'rho')
+        results.Cf = results.tau ./ (0.5 * extra.rho .* Vmag.^2);  % Fanning skin friction coefficient
+    end
+end
+if isfield(extra, 'rho') && isfield(extra, 'mu')
+    results.Re = extra.rho .* Vmag * d_h ./ extra.mu;              % Reynolds number
+end
 results.is_entrance   = is_entrance;   % applies to h/Nu only - see note above
 results.h_bar_simple  = h_bar_simple;
 results.Nu_bar_simple = Nu_bar_simple;

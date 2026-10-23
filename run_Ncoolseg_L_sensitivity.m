@@ -8,8 +8,16 @@
 %
 % This script NEVER runs the model. It only reads results that are already
 % saved under results/id-<id>/ (the files made by run_disc_model_fwdpass /
-% the sensitivity study / compare_models). Combinations that were never run
-% are simply left out of the curves.
+% the sensitivity study / compare_models).
+%
+% Only ids that have a saved result for EVERY requested combination
+% (all N_seg_list x all N_cool_list, for the chosen use_DNS) are used:
+%   * random draw: picks n_cases of those; if none exist it stops with an
+%     error saying so, and if there are fewer than n_cases it stops with an
+%     error saying how many were found (lower n_cases, or shorten the lists).
+%   * ids given: every one of them must be complete, otherwise it stops with
+%     an error listing which ids are incomplete and how many combinations
+%     each is missing.
 %
 % For the station / HX profiles of ONE case across N_cool_seg (or models,
 % N_segments, DNS), use compare_models.m.
@@ -18,16 +26,13 @@ clear; clc;
 
 %% ---- Settings ---- %%
 ids         = [];       % specific ids to plot, e.g. [3 7 12]; [] = draw randomly (below)
-n_cases     = 4;        % random draw: how many saved ids
+n_cases     = 5;        % random draw: how many saved ids
 seed        = [];        % random draw: [] = different ids every run; a number = repeatable
 use_DNS     = false;    % which saved variant to read (correlation-based vs DNS-based)
 
-N_cool_list = [1 2 3 5 7 10 15 20 30];   % must be >= 1 (0 would be the 1D path)
-N_seg_list  = [50 20 10];                % first = finest; one line style each
+N_cool_list = [1 2 5 10 15 20 30];   % must be >= 1 (0 would be the 1D path)
+N_seg_list  = [50 25 10];                % first = finest; one line style each
 line_styles = {'-', '--', ':', '-.'};    % matched to N_seg_list in order
-
-min_points  = 2;        % random draw only: an id needs at least this many saved N_cool_seg
-                        % values at some N_segments to be eligible (one point is not a curve)
 
 %% ---- Find the saved ids that have usable results ---- %%
 idx_file = fullfile('results', 'results_index.mat');
@@ -60,37 +65,53 @@ for row = 1:height(ri)
     saved_file{row} = files;
 end
 
+% complete(row): saved results exist for every N_seg_list x N_cool_list combination
+n_total  = n_Ns*n_Nc;
+n_have   = zeros(height(ri), 1);
+for row = find(is_disc)'
+    if ~isempty(saved_file{row})
+        n_have(row) = nnz(cellfun(@(x) ~isempty(x), saved_file{row}));
+    end
+end
+complete = is_disc & (n_have == n_total);
+
 if ~isempty(ids)
-    % Chosen ids, in the order given
+    % Chosen ids, in the order given -- every one must be complete
     pick = zeros(0,1);
+    bad  = {};
     for id = ids(:)'
-        row = find(ri.id == id & is_disc, 1);
-        if isempty(row)
-            warning('id %d is not a discretised-model id in the results index -- skipped.', id);
-        elseif ~any(cellfun(@(x) ~isempty(x), saved_file{row}), 'all')
-            warning('id-%d has no saved results for these N_cool_list/N_seg_list/use_DNS -- skipped.', id);
+        row = find(ri.id == id, 1);
+        if isempty(row) || ~is_disc(row)
+            bad{end+1} = sprintf('id-%d (not a discretised-model id in the results index)', id); %#ok<SAGROW>
+        elseif ~complete(row)
+            bad{end+1} = sprintf('id-%d (%d of %d combinations saved)', id, n_have(row), n_total); %#ok<SAGROW>
         else
             pick(end+1,1) = row; %#ok<SAGROW>
         end
     end
-    if isempty(pick)
-        error('run_Ncoolseg_L_sensitivity: none of the requested ids has usable saved results.');
+    if ~isempty(bad)
+        error(['run_Ncoolseg_L_sensitivity: %d of the %d requested ids lack saved results for all ' ...
+               'N_seg_list x N_cool_list combinations (use_DNS = %d):\n  %s'], ...
+               numel(bad), numel(ids), use_DNS, strjoin(bad, sprintf('\n  ')));
     end
     fprintf('Using requested ids: %s\n', mat2str(ri.id(pick)'));
 else
-    % Random draw among ids with at least min_points saved N_cool_seg values at some N_segments
-    elig = [];
-    for row = find(is_disc)'
-        have = cellfun(@(x) ~isempty(x), saved_file{row});
-        if any(sum(have, 2) >= min_points), elig(end+1) = row; end %#ok<SAGROW>
-    end
+    % Random draw among ids that are complete for every requested combination
+    elig = find(complete)';
     if isempty(elig)
-        error(['run_Ncoolseg_L_sensitivity: no saved id has >= %d N_cool_seg results at the same ' ...
-               'N_segments (N_cool_list/N_seg_list/use_DNS as set above).'], min_points);
+        error(['run_Ncoolseg_L_sensitivity: no saved id has results for all %d requested combinations ' ...
+               '(N_seg_list = %s, N_cool_list = %s, use_DNS = %d). Shorten the lists or run more cases.'], ...
+               n_total, mat2str(N_seg_list), mat2str(N_cool_list), use_DNS);
+    elseif numel(elig) < n_cases
+        error(['run_Ncoolseg_L_sensitivity: only %d saved id(s) have results for all %d requested ' ...
+               'combinations (N_seg_list = %s, N_cool_list = %s, use_DNS = %d), but n_cases = %d. ' ...
+               'Lower n_cases, shorten the lists, or run more cases. Complete ids: %s'], ...
+               numel(elig), n_total, mat2str(N_seg_list), mat2str(N_cool_list), use_DNS, n_cases, ...
+               mat2str(ri.id(elig)'));
     end
     if ~isempty(seed), rng(seed); else, rng('shuffle'); end
-    pick = elig(randperm(numel(elig), min(n_cases, numel(elig))));
-    fprintf('Picked %d of %d eligible saved ids: %s\n', numel(pick), numel(elig), mat2str(ri.id(pick)'));
+    pick = elig(randperm(numel(elig), n_cases));
+    fprintf('Picked %d of %d complete saved ids: %s\n', numel(pick), numel(elig), mat2str(ri.id(pick)'));
 end
 
 cases   = ri.inputs(pick);

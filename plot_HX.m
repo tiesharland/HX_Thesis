@@ -249,6 +249,33 @@ if is_family
     figs_out.q_width = fig;
 end
 
+%% ---- Figure: Heat transfer per coolant cell (first vs last air-side segment), 2D only ---- %%
+% Q_seg_arr(k,l) is the heat transferred in width-wise coolant cell l of
+% air-side segment k, plotted at the cell midpoints across the coolant
+% width. Only drawn for 2D results (N_cool_seg >= 1); the 1D model has a
+% single cell per segment, so it is skipped.
+% Top: first air-side segment; bottom: last.
+if is_family && size(results.Q_seg_arr, 2) > 1
+    [fig, ax] = get_or_create_fig(figs_in, 'q_cell', 2, 1, 'Heat Transfer per Coolant Cell');
+
+    n_air_seg = size(results.Q_seg_arr, 1);
+    n_cells   = size(results.Q_seg_arr, 2);
+    seg_idx   = [1, n_air_seg];
+    seg_names = {'First air-side segment', 'Last air-side segment'};
+    x_c       = ((1:n_cells) - 0.5)/n_cells;   % cell midpoints, 0 = coolant inlet
+
+    for j = 1:2
+        if ~isfield(figs_in,'q_cell')
+            xlabel(ax(j),'Position across coolant width [-]  (0 = coolant inlet)');
+            ylabel(ax(j),'Q per coolant cell [kW]');
+            title(ax(j), seg_names{j});
+        end
+        addline(ax(j), x_c, results.Q_seg_arr(seg_idx(j), :)/1000);
+        legend(ax(j), 'Location','best');
+    end
+    figs_out.q_cell = fig;
+end
+
 %% ---- Figure: Air Flow Variables (v, Re, Pr) ---- %%
 [fig, ax] = get_or_create_fig(figs_in, 'flow', 3, 1, 'HX Air Flow Variables');
 

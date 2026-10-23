@@ -250,6 +250,41 @@ not_covered = log_tbl.Pr_extrap | log_tbl.Tb_extrap | log_tbl.Tw_extrap;
 fprintf('plot_thermoturb_coverage: %d logged queries, %d (%.1f%%) outside the (Pr,Tb,Tw) grid.\n', ...
         n_pts, sum(not_covered), 100*mean(not_covered));
 
+% Break the misses down by variable: which bound was crossed, by how many
+% queries, and how far. Bounds are the table's own min/max (the same
+% rectangle thermoturb_cached flags extrapolation against).
+if any(not_covered)
+    chk = struct( ...
+        'name',  {'Pr', 'Tb', 'Tw'}, ...
+        'unit',  {'',   ' K', ' K'}, ...
+        'flag',  {log_tbl.Pr_extrap, log_tbl.Tb_extrap, log_tbl.Tw_extrap});
+    flags = [log_tbl.Pr_extrap, log_tbl.Tb_extrap, log_tbl.Tw_extrap];
+    for c = 1:3
+        nm  = chk(c).name;
+        vq  = log_tbl.(nm);
+        lo  = min(tt.(nm));  hi = max(tt.(nm));
+        below = flags(:,c) & vq < lo;
+        above = flags(:,c) & vq > hi;
+        only_this = flags(:,c) & sum(flags, 2) == 1;
+        if any(below)
+            fprintf('  %d queries had %s < %.4g%s (table minimum); lowest %.4g%s.\n', ...
+                sum(below), nm, lo, chk(c).unit, min(vq(below)), chk(c).unit);
+        end
+        if any(above)
+            fprintf('  %d queries had %s > %.4g%s (table maximum); highest %.4g%s.\n', ...
+                sum(above), nm, hi, chk(c).unit, max(vq(above)), chk(c).unit);
+        end
+        if any(flags(:,c))
+            fprintf('    (%d of the %s misses were outside on %s alone, inside the other two.)\n', ...
+                sum(only_this), nm, nm);
+        end
+    end
+    n_multi = sum(sum(flags, 2) > 1);
+    if n_multi > 0
+        fprintf('  %d queries were outside on more than one variable at once.\n', n_multi);
+    end
+end
+
 % Color by design-run "set" when available: every query made during one
 % Q_pred_L_disc call (one HX length/Q evaluation -- the natural "one
 % design run", whether it's a 2D pass of N_segments*N_cool_seg cells or a
