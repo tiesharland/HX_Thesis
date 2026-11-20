@@ -113,12 +113,12 @@ m_dot_streamtube = Rho_1*v1*A2;
             v_channel_air, v_channel_coolant, d_h_coolant, A_o_coolant, A_o_air, ...
             Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, ...
             M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, T_cool_seg, dp_cool_seg, ...
-            T_air_seg, P_air_seg, v_air_seg, Re_air_seg, Pr_air_seg, v_channel_seg, ...
-            K_seg, f_air_seg, Nu_air_seg, h_air_seg, eta_fin_seg, ...
+            T_air_seg, P_air_seg, Re_air_seg, Pr_air_seg, v_air_seg, ...
+            K_seg, Cf_air_seg, Nu_air_seg, h_air_seg, eta_fin_seg, ...
             UA_seg_arr, NTU_seg_arr, eps_seg_arr, Q_seg_arr, dp_seg_arr, ...
-            Q_pred_solution, T_h_o_solution, P_0_air_seg, T_0_air_seg, M_air_seg, f_hx_seg, inlet_dp, outlet_dp, ...
+            Q_pred_solution, T_h_o_solution, P_0_air_seg, T_0_air_seg, M_air_seg, f_air_seg, inlet_dp, outlet_dp, ...
             delta_BL_seg, A_free_seg, d_h_bulk_seg, T_mean_c_arr, T_mean_h_arr, ...
-            h_cool_seg] = ...
+            h_cool_seg, Pr_cool_seg, Cf_coolant_seg, Nu_cool_seg, f_coolant_seg] = ...
             HX_design1_disc(use_DNS, e, r, hx_theta, counter, A3, v3, R, P3, ...
             d3_loc, T_h_o, n_modules, T_h_i, T_c_i, T_mean_h, ...
             Q_tot, M_dot_coolant, M_dot_3, T3, N_segments, N_cool_seg, tol_T);
@@ -158,18 +158,22 @@ m_dot_streamtube = Rho_1*v1*A2;
         state.Q_pred_solution = Q_pred_solution;
         state.T_h_o_solution = T_h_o_solution;
         state.T_air_seg = T_air_seg; state.P_air_seg = P_air_seg;
-        state.v_air_seg = v_air_seg; state.v_channel_seg = v_channel_seg;
+        state.v_air_seg = v_air_seg;
         state.Re_air_seg = Re_air_seg; state.Pr_air_seg = Pr_air_seg;
-        state.f_air_seg = f_air_seg; state.Nu_air_seg = Nu_air_seg;
+        state.Cf_air_seg = Cf_air_seg; state.Nu_air_seg = Nu_air_seg;
         state.h_air_seg = h_air_seg;
         state.h_cool_seg = h_cool_seg;
+        state.Pr_cool_seg = Pr_cool_seg;
+        state.Cf_coolant_seg = Cf_coolant_seg;   % Fanning
+        state.f_coolant_seg = f_coolant_seg;     % Darcy
+        state.Nu_cool_seg = Nu_cool_seg;
         state.v_cool_seg = v_channel_coolant; state.Re_cool_seg = Re_coolant; state.d_h_coolant = d_h_coolant;
         state.Q_seg_arr = Q_seg_arr; state.dp_seg_arr = dp_seg_arr;
         state.T_cool_seg = T_cool_seg;
         state.dp_cool_seg = dp_cool_seg;
         state.P_0_air_seg = P_0_air_seg; state.T_0_air_seg = T_0_air_seg;
         state.M_air_seg = M_air_seg;
-        state.f_hx_seg = f_hx_seg;
+        state.f_air_seg = f_air_seg;   % Darcy
         state.inlet_dp = inlet_dp;
         state.outlet_dp = outlet_dp;
         state.A_o_air = A_o_air;
@@ -272,7 +276,7 @@ fprintf('Compute time: %.3f s\n', t_compute);
 m_dot_seg = zeros(1, N_segments+1);
 for k = 1:N_segments+1
     rho_k        = rho_air(state.P_air_seg(k), state.T_air_seg(k));
-    m_dot_seg(k) = rho_k * state.v_channel_seg(k) * state.A_o_air * ...
+    m_dot_seg(k) = rho_k * state.v_air_seg(k) * state.A_o_air * ...
                    state.N_fin_air * state.N_air_pass;
 end
 m_dot_seg(1) = m_dot_seg(2);
@@ -337,13 +341,17 @@ results.t_compute       = t_compute;
 results.T_air_seg       = state.T_air_seg;
 results.P_air_seg       = state.P_air_seg;
 results.v_air_seg       = state.v_air_seg;
-results.v_channel_seg   = state.v_channel_seg;
 results.Re_air_seg      = state.Re_air_seg;
 results.Pr_air_seg      = state.Pr_air_seg;
-results.f_air_seg       = state.f_air_seg;
+results.Cf_air_seg      = state.Cf_air_seg;      % Fanning
+results.f_air_seg       = state.f_air_seg;       % Darcy
 results.Nu_air_seg      = state.Nu_air_seg;
 results.h_air_seg       = state.h_air_seg;
 results.h_cool_seg      = state.h_cool_seg;
+results.Pr_cool_seg     = state.Pr_cool_seg;
+results.Cf_coolant_seg  = state.Cf_coolant_seg;  % Fanning
+results.f_coolant_seg   = state.f_coolant_seg;   % Darcy
+results.Nu_cool_seg     = state.Nu_cool_seg;
 results.v_cool_seg      = state.v_cool_seg;
 results.Re_cool_seg     = state.Re_cool_seg;
 results.d_h_coolant     = state.d_h_coolant;
@@ -355,7 +363,6 @@ results.Q_pred_solution = state.Q_pred_solution;
 results.P_0_air_seg     = state.P_0_air_seg;
 results.T_0_air_seg     = state.T_0_air_seg;
 results.M_air_seg       = state.M_air_seg;
-results.f_hx_seg        = state.f_hx_seg;
 results.inlet_dp        = state.inlet_dp;
 results.outlet_dp       = state.outlet_dp;
 results.d_h_air         = state.d_h_air;

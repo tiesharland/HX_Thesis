@@ -14,10 +14,10 @@ function figs_out = plot_stations(results, model_type, varargin)
 %   P1_0..P6_0, T1..T6, v1..v6, M1..M6, M_dot_2..M_dot_6, m_spill,
 %   P_inf, P_inf_tot, T_inf, M_inf, V_inf).
 %   'discretised' / 'dns' / '2D' / '2DNS' additionally carry HX-interior
-%   arrays (T_air_seg, P_air_seg, P_0_air_seg, v_air_seg, v_channel_seg,
+%   arrays (T_air_seg, P_air_seg, P_0_air_seg, v_air_seg,
 %   m_dot_seg, M_air_seg (Mach number), T_0_air_seg, N_segments). The
-%   velocity plotted through the HX is v_channel_seg, the actual air
-%   velocity in the channels (v_air_seg, the equivalent-duct velocity, is not plotted).
+%   velocity plotted through the HX is v_air_seg, the actual air
+%   velocity in the channels.
 %
 %   One line per call: stations 0, 1, 2, then the HX-interior values (which
 %   start at station 3 and end at station 4), then stations 5 and 6, all
@@ -113,7 +113,7 @@ if ~is_lumped
     T_air_seg     = results.T_air_seg;
     P_air_seg     = results.P_air_seg;
     P_0_air_seg   = results.P_0_air_seg;
-    v_channel_seg = results.v_channel_seg;
+    v_channel_seg = results.v_air_seg;
     m_dot_seg     = results.m_dot_seg;
     M_air_seg     = results.M_air_seg;
     T_0_air_seg   = results.T_0_air_seg;

@@ -103,6 +103,7 @@ cfd_opt_files    = {'rho_air.srp', 'mu_air.srp', 'tau_wall_air.srp', 'yplus_air.
 include_coolant_cfd = false;   % also the coolant side (needs *_coolant.srp and Tbulk_coolant_in/_out.srp)
 cfd_P_operating     = 58200;   % CFD operating pressure [Pa] (Fluent Pbulk is gauge); empty = shift to model inlet pressure
 cfd_l_index         = 1;       % coolant-side column compared for the 2D models
+cfd_nu_ratio       = false;   % true = also draw the Nu-ratio figure (this queries the thermoturb table)
 
 
 figs = struct();
@@ -245,7 +246,7 @@ if include_cfd && ~isempty(models_D)
     [cfd, cfd_cool, cfd_labels, cool_ends] = load_cfd_exports(cfd_root, cfd_cases, cfd_export_files, ...
         cfd_opt_names, cfd_opt_files, d_h, include_coolant_cfd);
     args = {'cfd_labels', cfd_labels, 'results_2D', models_D, 'labels_2D', labels_D, ...
-            'cfd_coolant', cfd_cool, 'cfd_coolant_ends', cool_ends, 'cfd_P_operating', cfd_P_operating, 'l_index', cfd_l_index};
+            'cfd_coolant', cfd_cool, 'cfd_coolant_ends', cool_ends, 'cfd_P_operating', cfd_P_operating, 'l_index', cfd_l_index, 'nu_ratio', cfd_nu_ratio};
     if include_lumped, args = [args, {'lumped_results', results_L}]; end
     comparison = compare_cfd_meshes_vs_2d(cfd, args{:}); %#ok<NASGU>
 end

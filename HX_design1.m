@@ -1,4 +1,4 @@
-function [dp_coolant_loop,d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, v_channel_air, v_channel_coolant,d_h_coolant, A_o_coolant, A_o_air, Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, Q_pred_solution, T_cool_out, Pr_air, f_air, Nu_air, f_hx, inlet_dp] = HX_design1(e,r,hx_theta, counter, ~,A3,v3, R,P3,P3_0, h, d3, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant, M_dot_3, T3)
+function [dp_coolant_loop,d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, v_channel_air, v_channel_coolant,d_h_coolant, A_o_coolant, A_o_air, Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, Q_pred_solution, T_cool_out, Pr_air, f_air, Nu_air, f_hx, Pr_coolant, f_coolant, Nu_coolant, inlet_dp, outlet_dp] = HX_design1(e,r,hx_theta, counter, ~,A3,v3, R,P3,P3_0, h, d3, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant, M_dot_3, T3)
 
 %% Inputs %%
 
@@ -136,7 +136,7 @@ eta_fin_air = 0;
 
     f_air = 0.25*((1.8*log10(Re_air))-1.5)^(-2); %Konakov et al as cited in Mortean et.al 2019
     %fprintf("ff for air side = %f\n",f_air);
-    K = T_mean_c / T_mean_h; %T_mean_h/T_mean_c;
+    K = (T_mean_c/T_mean_h)^0.45; %T_mean_h/T_mean_c;
     if Re_air < 2300
         Nu_air = 3.66;  % Graetz solution for constant wall temperature
     elseif Re_air < 3000
@@ -170,7 +170,7 @@ eta_fin_air = 0;
     
     A_ht_coolant = b_hx*((A_f_coolant*N_fin_coolant*N_coolant_pass) + (A_p_coolant*N_fin_coolant*N_coolant_pass)); %m^2; total heat transfer area
     
-    v_channel_coolant = (m_dot_pass_coolant/(2*N_fin_coolant))/(rho_EG(T_mean_h)*(A_o_coolant));
+    v_channel_coolant = (m_dot_pass_coolant/(N_fin_coolant))/(rho_EG(T_mean_h)*(A_o_coolant));
     Re_coolant = rho_EG(T_mean_h)*v_channel_coolant*d_h_coolant/mu_EG(T_mean_h);
 
 
@@ -287,7 +287,23 @@ fprintf("Deviation = %.4f K\n", T_cool_out - T_h_o);
  %fprintf("friction factor = %f\n",f_hx);
  rho_mean_air = 0.5*(rho_air(P3,T_c_i)+rho_air(P3,T_c_o));
  rho_mean_coolant = 0.5*(rho_EG(T_h_i)+rho_EG(T_h_o));
- dp_hx = 0.5*rho_mean_air*v_channel_air*v_channel_air*f_hx*L_solution/d_h_air;
+ dp_fric = 0.5*rho_mean_air*v_channel_air*v_channel_air*f_hx*L_solution/d_h_air;
+
+ % Entrance and exit pressure change (Kays & London, 1960), same as HX_design1_disc.
+ % inlet_dp is a loss, outlet_dp a pressure rise; dp_hx = friction + inlet - outlet.
+ sigma    = A_o_air*N_fin_air*N_air_pass/A_frontal;       % free-flow / frontal area
+ G_ch     = rho_air(P3,T_mean_c)*v_channel_air;           % air mass flux in the channels
+ v_in     = G_ch/rho_air(P3,T3);
+ Kc       = kays_london_triangular(sigma, G_ch*d_h_air/mu_air(T3), 'Kc', false);
+ inlet_dp = 0.5*rho_air(P3,T3)*v_in^2*(1 - sigma^2 + Kc);
+ rho_exit = rho_air(P3 - dp_fric - inlet_dp, T_c_o);       % exit state estimate
+ v_exit   = G_ch/rho_exit;
+ Ke       = kays_london_triangular(sigma, G_ch*d_h_air/mu_air(T_c_o), 'Ke', false);
+ outlet_dp = 0.5*rho_exit*v_exit^2*(1 - sigma^2 - Ke);
+ dp_hx = dp_fric + inlet_dp - outlet_dp;
+ fprintf('Sigma: %f\n', sigma)
+ fprintf('Entrance pressure drop: %.2f Pa\n', inlet_dp)
+ fprintf('Exit pressure rise: %.2f Pa\n', outlet_dp)
 
  fprintf("Pressure loss = %f\n",dp_hx);
  
@@ -369,14 +385,13 @@ if counter > 200
     error('exiting HX');
 end
 
-f_coolant = (1/(-1.8*log10((0.0015/d_h_coolant)^1.11 + (6.9/Re_coolant))))^2;
-dp_coolant_loop = f_coolant*b_hx*(0.5*1082*v_channel_coolant^2)/d_h_coolant;
+f_coolant = (1/(-1.8*log10((sr/d_h_coolant)^1.11 + (6.9/Re_coolant))))^2;
+dp_coolant_loop = f_coolant*b_hx*(0.5*rho_mean_coolant*v_channel_coolant^2)/d_h_coolant;
 fprintf("Coolant side pressure loss is %f bar \n",dp_coolant_loop/1e+05);
 % if dp_coolant_loop > 1.5e+05
 %     error("Coolant side pressure loss is %f bar \n",dp_coolant_loop/1e+05);
 % end
 
-A_solid_alt = A_frontal - A_o_air*N_fin_air*N_air_pass;
 
 % fprintf('\nPlate area: %.5f m^2, fin area: %.5f m^2, together: %.5f m^2\n', A_p_air, A_f_air, A_p_air + A_f_air);
 % fprintf('Solid area: %.5f m^2\n', A_solid);
@@ -385,9 +400,6 @@ fprintf('Diffuser outlet area: %.5f m^2, HX inlet area: %.5f m^2\n', A3, A_front
 fprintf('Cross sectional area of core: %.5f m^2\n', V_core/L_solution)
 
 % - 0.5*rho_air(P4,T4)*v4^2
-inlet_dp = (0.5*rho_air(P3,T3)*v3^2)*(A_solid_alt/A_frontal);
-fprintf('Estimate inlet bulk pressure loss: %.2f Pa\n\n', inlet_dp)
+% inlet_dp and outlet_dp are now the Kays & London values, set with dp_hx above
 
 end
-
-

@@ -15,7 +15,7 @@ Tw = 358;                      % K — wall temperature
 show_correlation = true;                 % toggle: also draw the correlation Nu curves
 d_h_air  = 0.002209401076759;            % air hydraulic diameter [m] (same as the model)
 L_list   = [inf];                        % lengths [m] for the entrance factor (Inf = none)
-K_ratio  = (Tb / Tw)^0.45;                      % model uses T_hot_ref / T_in, with T_hot_ref = Tw here
+K_ratio  = (Tb / Tw);                      % model uses T_hot_ref / T_in, with T_hot_ref = Tw here
 col_corr = autumn(numel(L_list) + 2);    % correlation: red-yellow, one colour per length (skip the extremes)
 col_corr = col_corr(2:end-1, :);
 
@@ -205,7 +205,7 @@ Nu = zeros(size(Re));
 for i = 1:numel(Re)
     Re_in = Re(i);
     f_in  = 0.25*((1.8*log10(Re_in))-1.5)^(-2);   % Konakov et al, as in the model
-    Nu_turb = (f_in/2)*(Re_in-1000)*Pr*K_ratio* ...
+    Nu_turb = (f_in/2)*(Re_in-1000)*Pr*K_ratio^0.45* ...
               (1 + 1/3*(d_h/L)^(2/3)) / ...
               (1+12.7*sqrt(f_in/2)*(Pr^(2/3)-1));
     if Re_in < 2300

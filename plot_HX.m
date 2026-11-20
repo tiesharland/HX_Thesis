@@ -286,7 +286,7 @@ end
 if is_lumped
     addline(ax(1), xb, [results.v_channel_air, results.v_channel_air]);
 elseif is_family
-    addline(ax(1), xb, mean(results.v_channel_seg,2));
+    addline(ax(1), xb, mean(results.v_air_seg,2));
 end
 legend(ax(1), 'Location','northeast');
 
@@ -325,7 +325,7 @@ end
 if is_lumped
     addline(ax(1), xb, [results.f_air, results.f_air]);
 elseif is_family
-    addline(ax(1), xb, mean(results.f_air_seg,2));
+    addline(ax(1), xm, mean(results.Cf_air_seg,2));
 end
 legend(ax(1), 'Location','southeast');
 
@@ -336,7 +336,7 @@ end
 if is_lumped
     addline(ax(2), xb, [results.f_hx, results.f_hx]);
 elseif is_family
-    addline(ax(2), xb, mean(results.f_hx_seg,2));  % NOTE: previously not plotted for DNS - now included for every family type
+    addline(ax(2), xm, mean(results.f_air_seg,2));  % NOTE: previously not plotted for DNS - now included for every family type
 end
 legend(ax(2), 'Location','southeast');
 

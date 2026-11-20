@@ -1,4 +1,4 @@
-function [dp_coolant_loop,d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, v_channel_air, v_channel_coolant,d_h_coolant, A_o_coolant, A_o_air, Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX] = HX_design1(s_bend_switch,e,r,hx_theta, counter, ~,A3,v3, R,P3,P3_0, h, d3, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant_max, M_dot_3, T3)
+function [dp_coolant_loop,d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, v_channel_air, v_channel_coolant,d_h_coolant, A_o_coolant, A_o_air, Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, Q_pred_solution, T_cool_out, Pr_air, f_air, Nu_air, f_hx, Pr_coolant, f_coolant, Nu_coolant, inlet_dp, outlet_dp] = HX_design1_v2(s_bend_switch,e,r,hx_theta, counter, ~,A3,v3, R,P3,P3_0, h, d3, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant_max, M_dot_3, T3)
 
 %% Inputs %%
 
@@ -62,7 +62,7 @@ m_dot_pass_air = m_dot_air/N_air_pass;
 %fprintf("md_air = %f\n",m_dot_pass_air);
 m_dot_pass_coolant = m_dot_coolant/N_coolant_pass;
 
-v_channel_air = (m_dot_pass_air/(0.5*N_fin_air))/(rho_air(P3,T_mean_c)*(A_o_air));
+v_channel_air = (m_dot_pass_air/(N_fin_air))/(rho_air(P3,T_mean_c)*(A_o_air));
 
 Re_air = rho_air(P3,T_mean_c)*v_channel_air*d_h_air/mu_air(T_mean_c);
 %fprintf("Re = %f\n", Re_air);
@@ -91,7 +91,6 @@ eta_fin_air = 0;
 epsilon = 0;
 f_air = 0; 
 Nu_air = 0;
-f_air = 0;
 Nu_coolant = 0;
 f_coolant = 0;
 
@@ -103,10 +102,10 @@ f_coolant = 0;
     A_f_air = sqrt(ht_air^2 + (b_t_air*0.5)^2)+sqrt(((b_t_air*0.5)+(t_fin/sqrt(2)))^2 + (ht_air+(t_fin/sqrt(2)))^2); %m; air side fin surface area
  
 
-    A_ht_air_1 = (((A_f_air*N_fin_air*N_air_pass) + (A_p_air*N_fin_air*N_air_pass))*L); %m^2; total heat transfer area
+    A_ht_air = (((A_f_air*N_fin_air*N_air_pass) + (A_p_air*N_fin_air*N_air_pass))*L); %m^2; total heat transfer area
 
 
-    A_ht_air = b_t_air*2*N_fin_air*N_air_pass*L; %3*b_t_air*2*N_fin_air*N_air_pass*L;
+    A_ht_air_1 = b_t_air*2*N_fin_air*N_air_pass*L; %3*b_t_air*2*N_fin_air*N_air_pass*L;
     
     sr = 2e-06; % m - surface roughness of aluminum
     Re_low  = 1800;
@@ -114,7 +113,7 @@ f_coolant = 0;
 
         
     % Laminar correlation
-    f_lam = 0.25*((1.8*log10(Re_air))-1.5)^(-2); %%Konakov, Gnielinski et al as cited in Mortean et.al 2019
+    f_lam = ((1.8*log10(Re_air))-1.5)^(-2); %%Konakov, Gnielinski et al as cited in Mortean et.al 2019
 
     % Turbulent correlation
     f_turb = (1/(-2 * log10( 2.7*log10(Re_air)^1.2/Re_air + (sr/d_h_air)/3.71)))^2; %M.Gerl et.al valid for turbulent
@@ -131,7 +130,7 @@ f_coolant = 0;
 
         f_air = (1-w)*f_lam + w*f_turb;
     end
-    K = 1; %T_mean_h/T_mean_c;
+    K = (T_mean_c/T_mean_h)^0.45;
 
     if Re_air < 2300
         %Nu_air = 3.66;  % Graetz solution for constant wall temperature
@@ -139,11 +138,11 @@ f_coolant = 0;
     elseif Re_air < 3000
         w = (Re_air - 2300)/(3000 - 2300);
         Nu_lam = 4.364 + ((0.086)*(1*Re_air*Pr_air*d_h_air/L)^(1.33))/(1+(0.1*Pr_air*(d_h_air*Re_air/L)^(0.83)));
-        Nu_turb = (f_air/8)*(Re_air-1000)*Pr_air*(1+(d_h_air/L)^(2/3))*K/(1+(12.7*sqrt(f_air/2)*(Pr_air^(2/3)-1))); %Gnielinski et.al as cited in Mortean et.al 2019
+        Nu_turb = (f_air/8)*(Re_air-1000)*Pr_air*(1+(d_h_air/L)^(2/3))*K/(1+(12.7*sqrt(f_air/8)*(Pr_air^(2/3)-1))); %Gnielinski et.al as cited in Mortean et.al 2019
         Nu_air = (1-w)*Nu_lam + w*Nu_turb;
     else
     % Turbulent Gnielinski
-        Nu_air = (f_air/8)*(Re_air-1000)*Pr_air*(1+(d_h_air/L)^(2/3))*K/(1+(12.7*sqrt(f_air/2)*(Pr_air^(2/3)-1))); %Gnielinski et.al as cited in Mortean et.al 2019
+        Nu_air = (f_air/8)*(Re_air-1000)*Pr_air*(1+(d_h_air/L)^(2/3))*K/(1+(12.7*sqrt(f_air/8)*(Pr_air^(2/3)-1))); %Gnielinski et.al as cited in Mortean et.al 2019
     end
 
     h_air = Nu_air*k_air(T_mean_c)/d_h_air;
@@ -163,16 +162,16 @@ f_coolant = 0;
     A_p_coolant = (b_t_coolant*0.5)+((b_t_coolant*0.5)+(t_fin/sqrt(2))); %m^2; coolant side primary heat transfer surface
     A_f_coolant = sqrt(ht_coolant^2 + (b_t_coolant*0.5)^2)+sqrt(((b_t_coolant*0.5)+(t_fin/sqrt(2)))^2 + (ht_coolant+(t_fin/sqrt(2)))^2);  %m^2; coolant side fin surface area
     
-    A_ht_coolant = (A_f_coolant*N_fin_coolant*N_coolant_pass) + (A_p_coolant*N_fin_coolant*N_coolant_pass); %m^2; total heat transfer area
+    A_ht_coolant = (((A_f_coolant*N_fin_coolant*N_coolant_pass) + (A_p_coolant*N_fin_coolant*N_coolant_pass))*b_hx); %m^2; total heat transfer area
     
-    v_channel_coolant = (m_dot_pass_coolant/(0.5*N_fin_coolant))/(rho_EG(T_mean_h)*(A_o_coolant));
+    v_channel_coolant = (m_dot_pass_coolant/(N_fin_coolant))/(rho_EG(T_mean_h)*(A_o_coolant));
     Re_coolant = rho_EG(T_mean_h)*v_channel_coolant*d_h_coolant/mu_EG(T_mean_h);
 
     Re_low  = 1800;
     Re_high = 3000;
 
     % Laminar correlation
-    f_lam = 0.25*((1.8*log10(Re_coolant))-1.5)^(-2);
+    f_lam = ((1.8*log10(Re_coolant))-1.5)^(-2);
 
     % Turbulent correlation
     f_turb = (1/(-2 * log10( 2.7*log10(Re_coolant)^1.2/Re_coolant + (sr/d_h_coolant)/3.71)))^2;
@@ -205,16 +204,17 @@ f_coolant = 0;
         w = (Re_coolant - 2300)/(3000 - 2300);
         K1 = 1; %Pr_mean/Pr_wall; assuming it to be 1 since wall temp is assumed to be bulk temp in calculations;
         Nu_lam_coolant = 4.364 + ((0.086)*(1*Re_coolant*Pr_coolant*d_h_coolant/b_hx)^(1.33))/(1+(0.1*Pr_coolant*(d_h_coolant*Re_coolant/b_hx)^(0.83)));%3.66;
-        Nu_turb_coolant = (f_coolant/8)*(Re_coolant-1000)*Pr_coolant*(1+(d_h_coolant/b_hx)^(2/3))*K1/(1+(12.7*sqrt(f_coolant/2)*(Pr_coolant^(2/3)-1))); %Gnielinski et.al as cited in Mortean et.al 2019
+        Nu_turb_coolant = (f_coolant/8)*(Re_coolant-1000)*Pr_coolant*(1+(d_h_coolant/b_hx)^(2/3))*K1/(1+(12.7*sqrt(f_coolant/8)*(Pr_coolant^(2/3)-1))); %Gnielinski et.al as cited in Mortean et.al 2019
         Nu_coolant = (1-w)*Nu_lam_coolant + w*Nu_turb_coolant;
     else
     % Turbulent Gnielinski
         %sr = 2e-06; %m; 2e-06 - OG; surface roughness of aluminium
         K1 = 1; %Pr_mean/Pr_wall; assuming it to be 1 since wall temp is assumed to be bulk temp in calculations;
         %f_coolant = (1/(-2 * log10(2.7*log10(Re_coolant)^1.2/Re_coolant+(sr/d_h_coolant)/3.71)))^2; %M.Gerl et.al valid for turbulent
-        Nu_coolant = (f_coolant/8)*(Re_coolant-1000)*Pr_coolant*(1+(d_h_coolant/b_hx)^(2/3))*K1/(1+(12.7*sqrt(f_coolant/2)*(Pr_coolant^(2/3)-1))); %Gnielinski et.al as cited in Mortean et.al 2019
+        Nu_coolant = (f_coolant/8)*(Re_coolant-1000)*Pr_coolant*(1+(d_h_coolant/b_hx)^(2/3))*K1/(1+(12.7*sqrt(f_coolant/8)*(Pr_coolant^(2/3)-1))); %Gnielinski et.al as cited in Mortean et.al 2019
 
     end
+    h_coolant = Nu_coolant * k_EG(T_mean_h) / d_h_coolant;   % set in every regime (was only set when laminar)
 
     m_coolant = sqrt(2*h_coolant/(k_fin*t_fin)); %constant used in fin efficiency calcs.
     eta_fin_coolant = tanh(m_coolant*ht_coolant)/(m_coolant*ht_coolant);
@@ -291,12 +291,35 @@ L_solution = fzero(f_scalar, [L_low, L_high]);% solving for length of hx using a
 %L_solution = 0.2; %L_solution;
 fprintf("Effectvie length of HX is = %f\n",L_solution); %*cosd(hx_theta)
 %fprintf("Surface area = %f\n", A_ht_air*L_solution);
+Q_pred_solution = Q_pred_L(L_solution);
+T_cool_out = T_h_i - Q_pred_solution/(m_dot_coolant * cp_EG_50_50(T_mean_h));
+%fprintf("Surface area = %f\n", A_ht_air*L_solution);
+fprintf("Predicted coolant outlet temperature = %.4f K\n", T_cool_out);
+fprintf("Required coolant outlet temperature  = %.4f K\n", T_h_o);
+fprintf("Deviation = %.4f K\n", T_cool_out - T_h_o);
  
  %% Calculation of dP across the HX %%
  
  rho_mean_air = 0.5*(rho_air(P3,T_c_i)+rho_air(P3,T_c_o));
  rho_mean_coolant = 0.5*(rho_EG(T_h_i)+rho_EG(T_h_o));
- dp_hx = 0.5*rho_mean_air*v_channel_air*v_channel_air*f_air*L_solution/d_h_air;
+ dp_fric = 0.5*rho_mean_air*v_channel_air*v_channel_air*f_air*L_solution/d_h_air;
+
+ % Entrance and exit pressure change (Kays & London, 1960), same as HX_design1_disc.
+ % inlet_dp is a loss, outlet_dp a pressure rise; dp_hx = friction + inlet - outlet.
+ sigma    = A_o_air*0.5*N_fin_air*N_air_pass/A_frontal;   % free-flow / frontal area (0.5 as in v_channel_air)
+ G_ch     = rho_air(P3,T_mean_c)*v_channel_air;           % air mass flux in the channels
+ v_in     = G_ch/rho_air(P3,T3);
+ Kc       = kays_london_triangular(sigma, G_ch*d_h_air/mu_air(T3), 'Kc', false);
+ inlet_dp = 0.5*rho_air(P3,T3)*v_in^2*(1 - sigma^2 + Kc);
+ T_exit   = T_c_i + epsilon*(T_h_i - T_c_i);              % same as T4 below
+ rho_exit = rho_air(P3 - dp_fric - inlet_dp, T_exit);      % exit state estimate
+ v_exit   = G_ch/rho_exit;
+ Ke       = kays_london_triangular(sigma, G_ch*d_h_air/mu_air(T_exit), 'Ke', false);
+ outlet_dp = 0.5*rho_exit*v_exit^2*(1 - sigma^2 - Ke);
+ dp_hx = dp_fric + inlet_dp - outlet_dp;
+ fprintf('Sigma: %f\n', sigma)
+ fprintf('Entrance pressure drop: %.2f Pa\n', inlet_dp)
+ fprintf('Exit pressure rise: %.2f Pa\n', outlet_dp)
  fprintf("Pressure loss = %f\n",dp_hx);
  fprintf("Nusselt air = %f; Re air = %f; f_air = %f\n",Nu_air,Re_air,f_air);
  fprintf("Nusselt cool = %f; Re cool = %f; f_cool = %f\n",Nu_coolant,Re_coolant,f_coolant);
@@ -389,12 +412,15 @@ sigma_coolant = A_o_coolant*N_fin_coolant*N_coolant_pass/(L_solution*h_hx);
 G_coolant = m_dot_coolant/(A_o_coolant*N_fin_coolant*N_coolant_pass);
 dp_minor = (0.5*(1-sigma_coolant) + (1-sigma_coolant)^2)*G_coolant*G_coolant/(2*rho_mean_coolant);
 fprintf("Minor coolant dP = %f\n",dp_minor);
-dp_coolant_loop = f_coolant*b_hx*(0.5*1082*v_channel_coolant^2)/d_h_coolant;
+dp_coolant_loop = f_coolant*b_hx*(0.5*rho_mean_coolant*v_channel_coolant^2)/d_h_coolant;
 fprintf("Coolant side pressure loss is %f bar; friction facto = %f \n",dp_coolant_loop/1e+05,f_coolant);
+
+%% Extra outputs, same meaning as in HX_design1 (used by compare_models) %%
+f_hx = f_air;   % friction factor used for dp_hx (here the same as f_air)
+f_air = f_air/4; % Match outputs -> fanning / skin friction
+% inlet_dp and outlet_dp are the Kays & London values, set with dp_hx above
 % if dp_coolant_loop > 1.5e+05
 %     error("Coolant side pressure loss is %f bar \n",dp_coolant_loop/1e+05);
 % end
 
 end
-
-

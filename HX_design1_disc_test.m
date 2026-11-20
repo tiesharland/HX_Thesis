@@ -1,30 +1,69 @@
 function [dp_coolant_loop, d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, ...
           N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, ...
-          v_channel_air, v_channel_coolant, d_h_coolant, A_o_coolant, A_o_air, ...
-          Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, ...
-          M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, ...
-          T_air_seg, P_air_seg, v_air_seg, Re_air_seg, Pr_air_seg, ...
-          K_seg, f_air_seg, Nu_seg_arr, h_air_seg, eta_fin_seg, ...
+          v_channel_air, v_cool_seg, d_h_coolant, A_o_coolant, A_o_air, ...
+          Re_air, Re_cool_seg, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, ...
+          M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, T_cool_seg, dp_cool_seg, ...
+          T_air_seg, P_air_seg, Re_air_seg, Pr_air_seg, v_air_seg, ...
+          K_seg, Cf_air_seg, Nu_seg_arr, h_air_seg, eta_fin_seg, ...
           UA_seg_arr, NTU_seg_arr, eps_seg_arr, Q_seg_arr, dp_seg_arr, ...
-          T_cool_seg] = ...
-          HX_design1_disc_test(e, r, hx_theta, counter, A3, v3, R, P3, ...
+          Q_pred_solution, T_h_o_solution, P_0_air_seg, T_0_air_seg, M_air_seg, f_air_seg, inlet_dp, outlet_dp, ...
+          delta_BL_seg, A_free_seg, d_h_bulk_seg, T_mean_c_arr, T_mean_h_arr, ...
+          h_cool_seg, Pr_cool_seg, Cf_coolant_seg, Nu_cool_seg, f_coolant_seg] = ...
+          HX_design1_disc_test(use_DNS, e, r, hx_theta, counter, A3, v3, R, P3, ...
           d3, T_h_o, n_modules, T_h_i, T_c_i, T_mean_h, ...
-          Q_tot, M_dot_coolant_max, M_dot_3, T3, N_segments)
+          Q_tot, M_dot_coolant, M_dot_3, T3, N_segments, N_cool_seg, tol_T)
+% HX_design1_disc_test  Discretised heat-exchanger sizing model.
+%
+% N_cool_seg selects the coolant-side treatment:
+%   N_cool_seg == 0  ->  1D. One coolant "lane" per air segment (parallel
+%                        manifold: coolant arrives at T_h_i at every air
+%                        segment). Each segment iterates (inner loop) on the
+%                        mean coolant temperature until the coolant outlet
+%                        temperature stops changing. Coolant properties and
+%                        the length-averaged Nu are evaluated at that mean.
+%   N_cool_seg >= 1  ->  2D. The coolant side is split into N_cool_seg
+%                        columns and marched directly (no inner loop), with
+%                        local coolant properties and the LOCAL Nu at the end
+%                        of each column. N_cool_seg = 1 is not the same as 0.
+% Both use the same code in Q_pred_L: the cell loop runs over l = 1:N_seg_cool
+% (a single cell for 1D) and the inner loop runs once for 2D.
+%
+% All outputs are array-shaped: (N_segments+1) x N_seg_cool for node arrays,
+% N_segments x N_seg_cool for segment arrays (N_seg_cool = 1 for 1D).
+%
+% Friction is evaluated only inside the cell evaluation, at the cell's inlet
+% state, for air (correlation or DNS) and coolant alike: Cf_air_seg, f_air_seg,
+% Cf_coolant_seg, f_coolant_seg are N_segments x N_seg_cool segment arrays.
+% Friction naming (outputs): Cf_air_seg / Cf_coolant_seg = Fanning (skin
+% friction coefficient); f_air_seg / f_coolant_seg = Darcy friction factor
+% (the one used for the pressure drops). v_air_seg = air velocity in the
+% channels. Nu/friction correlations are the small helper functions below;
+% the four "selection" functions (air_friction, air_Nu, coolant_friction,
+% coolant_Nu) are the only place where HX_design1_disc_test differs from its sibling file.
+%
+% Nu_gn takes local = true (local Nu at position x, factor 1/3) or false
+% (length-averaged over x). The air side always uses local = true at x = dx*k;
+% the coolant uses local = true in 2D at x = dy*l and false in 1D at x = b_hx.
+% Segment order of the air side keeps the old convention: x = dx*k.
 
-%% ---- Geometry and passage counts ---- %%
+use_2d     = N_cool_seg > 0;
+N_seg_cool = max(N_cool_seg, 1);   % column count (1 for 1D)
+
+%% ---- Geometry and passage counts (shared by both algorithms) ---- %%
+
+sr  = 2e-06;
+k_fin_val = 237;
 
 A_frontal = pi*d3*d3/(4*cosd(hx_theta));
 fprintf("HX frontal area = %f\n", A_frontal);
 fprintf("e = %f\n", e);
 
 m_dot_air = M_dot_3;
-Q_limit   = m_dot_air*cp_air(T3)*(T_h_i-T_c_i);
+Q_limit   = m_dot_air*cp_air(T3)*(T_h_i-T3);
 fprintf("Qlim = %f\n", Q_limit);
 if Q_limit < Q_tot/n_modules
     error("HX mass flow rate not sufficient, increase diffuser inlet area or need a puller fan;");
 end
-
-m_dot_coolant = M_dot_coolant_max;
 
 t_plate     = 0.5e-03;
 t_fin       = 0.1e-03;
@@ -42,7 +81,7 @@ h_passage_coolant = ht_coolant + (t_fin*sqrt(2));
 
 b_hx = sqrt(A_frontal);
 h_hx = b_hx;
-fprintf("HX side length = %f\n", b_hx);
+fprintf("HX height= %f\n", b_hx);
 
 N_pass_tot = h_hx / ((t_plate+(ht_air+(t_fin/sqrt(2)))) + ...
                       (t_plate+(ht_coolant+(t_fin/sqrt(2)))));
@@ -61,44 +100,101 @@ A_o_coolant = (0.5*(b_t_coolant*0.5)*ht_coolant) + ...
               (0.5*((b_t_coolant*0.5)+(t_fin/sqrt(2)))*(ht_coolant+(t_fin/sqrt(2))));
 
 m_dot_pass_air     = m_dot_air     / N_air_pass;
-m_dot_pass_coolant = m_dot_coolant / N_coolant_pass;
+m_dot_pass_cool    = M_dot_coolant / N_coolant_pass;
+
+A_p_coolant   = (b_t_coolant*0.5) + ((b_t_coolant*0.5)+(t_fin/sqrt(2)));
+A_f_coolant   = sqrt(ht_coolant^2+(b_t_coolant*0.5)^2) + ...
+                sqrt(((b_t_coolant*0.5)+(t_fin/sqrt(2)))^2 + (ht_coolant+(t_fin/sqrt(2)))^2);
+
+A_p_air      = (b_t_air*0.5) + ((b_t_air*0.5)+(t_fin/sqrt(2)));
+A_f_air      = sqrt(ht_air^2+(b_t_air*0.5)^2) + ...
+               sqrt(((b_t_air*0.5)+(t_fin/sqrt(2)))^2 + (ht_air+(t_fin/sqrt(2)))^2);
+
+% Collapses to the 1D path's original (unscaled) formula when
+% N_seg_cool == 1 -- no if/else needed.
+R_cond_seg = t_plate/(k_fin_val*t_plate*(2*N_pass_tot+2)*b_hx/N_seg_cool);
+
+% Plates
+A_plates = (N_pass_tot + 2) * t_plate * b_hx;
+
+% Air fin solid material (fins between channels within each air passage)
+% Total air passage area minus open channel area, times number of passages
+A_one_air_pass = (ht_air + t_fin/sqrt(2)) * b_hx;  % approximate height of one air layer
+A_fins_air_solid = (A_one_air_pass - A_o_air*N_fin_air) * N_air_pass;
+
+% Coolant passage face area (seen end-on in frontal plane)
+% The entire coolant layer height times b_hx, minus nothing since
+% coolant open area is not in the air-flow direction
+A_coolant_layer = (ht_coolant + t_fin/sqrt(2)) * b_hx * N_coolant_pass;
+
+A_solid = A_plates + A_fins_air_solid + A_coolant_layer;
+A_solid_alt = A_frontal - A_o_air*N_fin_air*N_air_pass;
+
 
 %% ---- Inlet bulk reference (scalar outputs) ---- %%
 
-v_channel_air = (m_dot_pass_air/N_fin_air) / (rho_air(P3,T_c_i)*A_o_air);
-Re_air        = rho_air(P3,T_c_i)*v_channel_air*d_h_air / mu_air(T_c_i);
+v_channel_air = (m_dot_pass_air/N_fin_air) / (rho_air(P3,T3)*A_o_air);
+Re_air        = rho_air(P3,T3)*v_channel_air*d_h_air / mu_air(T3);
 
-%% ---- Shared variables written by nested function ---- %%
+%% ---- Estimate Inlet pressure loss (Kays & London, 1960) ---- %%
 
-T_c_o_disc        = T_c_i;
+sigma = A_o_air*N_fin_air*N_air_pass/A_frontal;
+fprintf('Sigma: %f\n', sigma)
+Kc = kays_london_triangular(sigma, Re_air, 'Kc', false);
+inlet_dp = v_channel_air^2 * rho_air(P3, T3) / 2 * (1 - sigma^2 + Kc);
+
+fprintf('Entrance pressure drop: %.2f Pa\n', inlet_dp)
+
+
+%% ---- Shared variables written by nested functions ---- %%
+
+T_c_o_disc        = T3;
 dp_hx_disc        = 0;
-v_channel_coolant = 0;
-Re_coolant        = 0;
 h_air             = 0;
 h_coolant         = 0;
 NTU               = 0;
 R_tot             = 0;
 UA_unit           = 0;
 
-% Node arrays: N_segments+1 points
-T_air_seg    = zeros(1, N_segments+1);
-P_air_seg    = zeros(1, N_segments+1);
-v_air_seg    = zeros(1, N_segments+1);
-Re_air_seg   = zeros(1, N_segments+1);
-Pr_air_seg   = zeros(1, N_segments+1);
-K_seg        = zeros(1, N_segments+1);
-f_air_seg    = zeros(1, N_segments+1);
-T_cool_seg   = zeros(1, N_segments+1);
+% Node arrays: (N_segments+1) x N_seg_cool
+T_air_seg    = zeros(N_segments+1, N_seg_cool);
+T_0_air_seg  = zeros(N_segments+1, N_seg_cool);
+P_air_seg    = zeros(N_segments+1, N_seg_cool);
+P_0_air_seg  = zeros(N_segments+1, N_seg_cool);
+Re_air_seg   = zeros(N_segments+1, N_seg_cool);
+Pr_air_seg   = zeros(N_segments+1, N_seg_cool);
+v_air_seg    = zeros(N_segments+1, N_seg_cool);   % velocity in the channels
+rho_air_seg  = zeros(N_segments+1, N_seg_cool);
+M_air_seg    = zeros(N_segments+1, N_seg_cool);
 
-% Segment arrays: N_segments values
-Q_seg_arr    = zeros(1, N_segments);
-dp_seg_arr   = zeros(1, N_segments);
-Nu_seg_arr   = zeros(1, N_segments);
-h_air_seg    = zeros(1, N_segments);
-eta_fin_seg  = zeros(1, N_segments);
-UA_seg_arr   = zeros(1, N_segments);
-NTU_seg_arr  = zeros(1, N_segments);
-eps_seg_arr  = zeros(1, N_segments);
+T_cool_seg = zeros(N_segments, N_seg_cool+1);
+
+% Segment arrays: N_segments x N_seg_cool
+K_seg          = zeros(N_segments, N_seg_cool);
+Cf_air_seg     = zeros(N_segments, N_seg_cool);   % Fanning, used in Nu (at the cell's inlet node)
+f_air_seg      = zeros(N_segments, N_seg_cool);   % Darcy, used for dp_seg (at the cell's inlet node)
+Q_seg_arr      = zeros(N_segments, N_seg_cool);
+dp_seg_arr     = zeros(N_segments, N_seg_cool);
+Nu_seg_arr     = zeros(N_segments, N_seg_cool);
+h_air_seg      = zeros(N_segments, N_seg_cool);
+eta_fin_seg    = zeros(N_segments, N_seg_cool);
+UA_seg_arr     = zeros(N_segments, N_seg_cool);
+NTU_seg_arr    = zeros(N_segments, N_seg_cool);
+eps_seg_arr    = zeros(N_segments, N_seg_cool);
+v_cool_seg     = zeros(N_segments, N_seg_cool);
+dp_cool_seg    = zeros(N_segments, N_seg_cool);
+Re_cool_seg    = zeros(N_segments, N_seg_cool);
+h_cool_seg     = zeros(N_segments, N_seg_cool);
+Pr_cool_seg    = zeros(N_segments, N_seg_cool);
+Cf_coolant_seg = zeros(N_segments, N_seg_cool);   % Fanning
+f_coolant_seg  = zeros(N_segments, N_seg_cool);   % Darcy (used for dp_cool)
+Nu_cool_seg    = zeros(N_segments, N_seg_cool);
+
+delta_BL_seg     = zeros(N_segments, N_seg_cool);
+A_free_seg       = zeros(N_segments, N_seg_cool);
+d_h_bulk_seg     = zeros(N_segments, N_seg_cool);
+T_mean_c_arr     = zeros(N_segments, N_seg_cool);
+T_mean_h_arr     = zeros(N_segments, N_seg_cool);
 
 %% ---- Nested: counter-flow effectiveness ---- %%
 
@@ -111,331 +207,447 @@ function eps = epsilon_counterflow(NTU, C_star)
     end
 end
 
-%% ---- Nested: discretised Q prediction ---- %%
+%% ---- Correlation helpers (physical inputs only) ---- %%
+% Re, Pr: Reynolds and Prandtl number; d_h: hydraulic diameter; x: distance from the
+% start of the heated length; K: temperature ratio factor (K^0.45); f_D: Darcy factor.
 
-function [Q_total] = Q_pred_L_disc(L)
-    % Counter-flow geometry:
-    % - Air flows from k=1 (inlet) to k=N (outlet) along L
-    % - Coolant flows from k=N+1 (inlet, T_h_i) to k=1 (outlet, T_h_o)
-    %   in the opposite direction to air
-    %
-    % T_cool indexing:
-    %   T_cool(k+1) = coolant temperature at inlet to segment k
-    %                 (from coolant flow perspective, entering from high-k side)
-    %   T_cool(k)   = coolant temperature at outlet of segment k
-    %   T_cool(N+1) = T_h_i  (known coolant inlet, at air outlet side)
-    %   T_cool(1)   = T_h_o  (known coolant outlet, at air inlet side)
-    %
-    % Inner iteration converges T_cool distribution by alternating:
-    %   1. Air forward march  (k=1 to N) using current T_cool
-    %   2. Coolant reverse march (k=N to 1) using updated T_air
-    % until T_cool converges.
+function f = f_lam(Re)                 % Darcy, Konakov et al. as cited in Mortean et al. 2019
+    f = ((1.8*log10(Re))-1.5)^(-2);
+end
 
-    dx        = L / N_segments;
-    sr        = 2e-06;
-    k_fin_val = 237;
+function f = f_turb(Re, sr, d_h)           % Darcy, Gerl et al. 2025
+    f = (1/(-2*log10(2.7*log10(Re)^1.2/Re + (sr/d_h)/3.71)))^2;
+end
 
-    Q_total  = 0;
-    dp_total = 0;
+function f = f_haaland(Re, sr, d_h)        % Darcy, the coolant formula of the original disc model
+    f = (1/(-1.8*log10((sr/d_h)^1.11 + (6.9/Re))))^2;
+end
 
-    %% ---- Fixed geometry quantities ---- %%
+function Nu = Nu_lam(Re, Pr, d_h, x)   % laminar, length dependent (Stephan and Preusser)
+    Nu = 2.49 + ((0.086)*(Re*Pr*d_h/x)^(1.33)) / (1+(0.1*Pr*(d_h*Re/x)^(0.83)));
+end
 
-    % Air-side heat transfer area per segment
-    A_p_air      = (b_t_air*0.5) + ((b_t_air*0.5)+(t_fin/sqrt(2)));
-    A_f_air      = sqrt(ht_air^2+(b_t_air*0.5)^2) + ...
-                   sqrt(((b_t_air*0.5)+(t_fin/sqrt(2)))^2 + ...
-                        (ht_air+(t_fin/sqrt(2)))^2);
-    A_ht_air_seg = ((A_f_air*N_fin_air*N_air_pass) + ...
-                    (A_p_air*N_fin_air*N_air_pass))*dx;
+function Nu = Nu_lam_dev(Re, Pr, d_h, x)  % laminar, simultaneously developing
+    Nu_m_1 = 2.49;
+    Nu_m_2 = 0.664*Pr^(1/3)*sqrt(Re*d_h/x);
+    Nu_m_3 = (2/(1+22*Pr))^(1/6) * sqrt(Re*Pr*d_h/x);
 
-    % Coolant-side geometry per segment
-    % N_fin_cool: coolant fins in one segment of length dx
-    N_fin_cool    = 2*dx/(2*t_fin/sqrt(2)+b_t_coolant);
-    A_p_coolant   = (b_t_coolant*0.5) + ((b_t_coolant*0.5)+(t_fin/sqrt(2)));
-    A_f_coolant   = sqrt(ht_coolant^2+(b_t_coolant*0.5)^2) + ...
-                    sqrt(((b_t_coolant*0.5)+(t_fin/sqrt(2)))^2 + ...
-                         (ht_coolant+(t_fin/sqrt(2)))^2);
-    A_ht_cool_seg = (A_f_coolant*N_fin_cool*N_coolant_pass) + ...
-                    (A_p_coolant*N_fin_cool*N_coolant_pass);
+    Nu = (Nu_m_1^3 + 0.7^3 + (Nu_m_2-0.7)^3 + Nu_m_3^3)^(1/3);
 
-    % Conduction resistance — constant
-    R_cond_seg = t_plate/(k_fin_val*t_plate*(2*N_pass_tot+2)*b_hx);
+    x_star = x/Re/Pr/d_h;
+    Nu = 1.0351*(x_star)^-0.2542;
+end
 
-    %% ---- Nested: compute air node properties from (T_air, P_air, T_cool) ---- %%
-    % T_cool is the local coolant temperature at this node, used for
-    % K correction and capacity rates
+function Nu = Nu_gn(Re, Pr, f_D, d_h, x, K, local)   % turbulent, Gnielinski
+    if local
+        c = 1/3;       % local Nu at position x
+    else
+        c = 1;         % Nu averaged over the length x
+    end
+    Nu = (f_D/8)*(Re-1000)*Pr*(1+c*(d_h/x)^(2/3))*K / ...
+         (1+12.7*sqrt(f_D/8)*(Pr^(2/3)-1));
+end
 
-    function node = compute_node(T_air, P_air, T_cool_local)
-        node.T   = T_air;
-        node.P   = P_air;
-        node.rho = rho_air(P_air, T_air);
-        node.v   = (m_dot_pass_air/N_fin_air) / (node.rho*A_o_air);
-        node.Re  = node.rho*node.v*d_h_air / mu_air(T_air);
-        node.Pr  = mu_air(T_air)*cp_air(T_air)/k_air(T_air);
+function Nu = Nu_DB(Re, Pr)            % turbulent, Dittus-Boelter (original disc coolant)
+    Nu = 0.023*Re^0.8*Pr^0.4;
+end
 
-        % K uses local coolant temperature, not global T_mean_h
-        node.K   = T_cool_local / T_air;
+%% ---- Correlation selection (the only part that differs from HX_design1_disc) ---- %%
+% TEST: friction blends laminar -> turbulent with a cosine between Re 1800 and 3000;
+% Nu blends laminar -> turbulent linearly between Re 2300 and 3000 (as in HX_design1_v2).
+% Cf: Fanning (used in Nu and reported); f_D: Darcy (used for pressure drops).
 
-        node.f   = (1/(-2*log10(2.7*log10(node.Re)^1.2/node.Re + ...
-                   (sr/d_h_air)/3.71)))^2;
+function [Cf, f_D] = air_friction(Re, Pr, sr, x, d_h)
+    f_D = friction_blend(Re, sr, d_h);
+    Cf = f_D/4;
+end
 
-        % Capacity rates use local temperatures
-        C_c          = M_dot_3*cp_air(T_air);
-        C_h          = M_dot_coolant_max*cp_EG_50_50(T_cool_local);
-        node.C_min   = min(C_c, C_h);
-        node.C_star  = node.C_min/max(C_c, C_h);
+function f_D = coolant_friction(Re, Pr, sr, x, d_h)
+    % Ref_lam_fd = 40/3;
+    % x_star = x/Re/Pr/d_h;
+    % f_lam = (Ref_lam_fd + 25/sqrt(x_star))/Re;
+    % if Re <= 1800
+    %     f_D = f_lam;
+    % elseif Re >= 3000
+    %     % f_D = f_turb(Re, sr, d_h);
+    %     f_D = 0.0425 / Re^0.2;
+    % else
+    %     wb = 0.5*(1-cos(pi*(Re-1800)/(3000-1800)));   % cosine smoothing
+    %     f_D  = (1-wb)*f_lam + wb*0.0425 / Re^0.2;
+    % end
+    f_D = friction_blend(Re, sr, d_h);
+end
+
+function Nu = air_Nu(Re, Pr, f_D, d_h, x, K, local)   % f_D: Darcy
+    if Re < 2300
+        Nu = Nu_lam(Re, Pr, d_h, x);
+    elseif Re < 3000
+        wn = (Re-2300)/(3000-2300);
+        Nu = (1-wn)*Nu_lam(Re, Pr, d_h, x) + wn*Nu_gn(Re, Pr, f_D, d_h, x, K, local);
+    else
+        Nu = Nu_gn(Re, Pr, f_D, d_h, x, K, local);
+    end
+end
+
+function Nu = coolant_Nu(Re, Pr, f_D, d_h, x, K, local)
+    if Re < 2300
+        Nu = Nu_lam_dev(Re, Pr, d_h, x);
+    elseif Re < 3000
+        wn = (Re-2300)/(3000-2300);
+        Nu = (1-wn)*Nu_lam_dev(Re, Pr, d_h, x) + wn*Nu_gn(Re, Pr, f_D, d_h, x, K, local);
+    else
+        Nu = Nu_gn(Re, Pr, f_D, d_h, x, K, local);
+    end
+end
+
+function f = friction_blend(Re, sr, d_h)
+    if Re <= 1800
+        % f = f_haaland(Re, sr, d_h);
+        f = 53.3/Re;
+    elseif Re >= 3000
+        f = f_turb(Re, sr, d_h);
+    else
+        wb = 0.5*(1-cos(pi*(Re-1800)/(3000-1800)));   % cosine smoothing
+        f  = (1-wb)*f_haaland(Re, sr, d_h) + wb*f_turb(Re, sr, d_h);
+    end
+end
+
+function Nu = Nu_blend(Re, Pr, f_D, d_h, x, K, local)
+    if Re < 2300
+        Nu = Nu_lam(Re, Pr, d_h, x);
+    elseif Re < 3000
+        wn = (Re-2300)/(3000-2300);
+        Nu = (1-wn)*Nu_lam(Re, Pr, d_h, x) + wn*Nu_gn(Re, Pr, f_D, d_h, x, K, local);
+    else
+        Nu = Nu_gn(Re, Pr, f_D, d_h, x, K, local);
+    end
+end
+
+%% ---- Nested: discretised Q prediction (1D and 2D in one function) ---- %%
+
+function [Q_total, T_h_o_predicted] = Q_pred_L(L)
+    % Air flows along L, discretised into N_segments slices of dx. For every air
+    % segment k and coolant column l (a single column for 1D) the heat transfer is
+    % evaluated from the air inlet state of that cell:
+    %   1D: inner loop on the mean coolant temperature (properties at the mean,
+    %       length-averaged coolant Nu);
+    %   2D: one pass with the local coolant inlet state (local coolant Nu).
+    % Results are written straight into the tracking arrays.
+
+    % One full HX evaluation at a given L = one "set" in the DNS query log.
+    if use_DNS
+        thermoturb_query_log('new_set');
     end
 
-    %% ---- Nested: compute coolant node properties from T_cool ---- %%
+    dx = L / N_segments;
+    dy = b_hx / N_seg_cool;   % == b_hx for 1D
 
-    function cool = compute_cool_node(T_cool_local)
-        cool.T     = T_cool_local;
-        cool.v     = (m_dot_pass_coolant/(2*N_fin_cool)) / ...
-                     (rho_EG(T_cool_local)*A_o_coolant);
-        cool.Re    = rho_EG(T_cool_local)*cool.v*d_h_coolant / ...
-                     mu_EG(T_cool_local);
-        cool.Pr    = mu_EG(T_cool_local)*cp_EG_50_50(T_cool_local) / ...
-                     k_EG(T_cool_local);
+    tol_cool = 1e-4;          % K, 1D inner loop
+    max_cool = 50;
+    if use_2d, n_iter = 1; else, n_iter = max_cool; end
 
-        if cool.Re < 2300
-            Nu_c    = 4.36;
-            cool.h  = Nu_c*k_EG(T_cool_local)/d_h_coolant;
-        else
-            Nu_c    = 0.023*cool.Re^0.8*cool.Pr^0.4;
-            j_c     = Nu_c/(cool.Re*cool.Pr^(1/3));
-            G_c     = rho_EG(T_cool_local)*cool.v;
-            cool.h  = j_c*G_c*cp_EG_50_50(T_cool_local)/cool.Pr^(2/3);
+    %% ---- Air inlet node ---- %%
+    T_in0   = T3;
+    P_in0   = P3 - inlet_dp;
+    rho_in0 = rho_air(P_in0, T_in0);
+    v_in0   = (m_dot_pass_air/N_fin_air) / (rho_in0*A_o_air);
+    Re_in0  = rho_in0*v_in0*d_h_air / mu_air(T_in0);
+    Pr_in0  = mu_air(T_in0)*cp_air(T_in0)/k_air(T_in0);
+    M_in0   = v_in0/sqrt(gamma_air(cp_air(T_in0))*R*T_in0);
+
+    T_air_seg(1,:)  = T_in0;     P_air_seg(1,:)   = P_in0;
+    v_air_seg(1,:)  = v_in0;     Re_air_seg(1,:)  = Re_in0;
+    Pr_air_seg(1,:) = Pr_in0;    rho_air_seg(1,:) = rho_in0;
+    M_air_seg(1,:)  = M_in0;
+    P_0_air_seg(1,:) = P_in0*((1+((gamma_air(cp_air(T_in0))-1).*M_in0.^2/2)).^ ...
+        ((gamma_air(cp_air(T_in0)))./(gamma_air(cp_air(T_in0))-1)));
+    T_0_air_seg(1,:) = T_in0*(1+((gamma_air(cp_air(T_in0))-1)*M_in0.^2)/2);
+
+    T_cool_seg(:,1) = T_h_i;
+    T_cool_out = T3;          % 1D warm start for the coolant outlet temperature
+
+    %% ---- Geometry that does not depend on the cell ---- %%
+    N_fin_cool    = 2*L/(2*t_fin/sqrt(2)+b_t_coolant);
+    A_ht_air_seg  = (((A_f_air*N_fin_air*N_air_pass) + (A_p_air*N_fin_air*N_air_pass))*dx/N_seg_cool);
+    A_ht_cool_seg = ((A_f_coolant*N_fin_cool*N_coolant_pass) + ...
+                     (A_p_coolant*N_fin_cool*N_coolant_pass)) * dy / N_segments;
+
+    %% ---- Segment loop ---- %%
+    for k = 1:N_segments
+        if use_DNS
+            thermoturb_query_log('new_seg');
         end
 
-        m_c         = sqrt(2*cool.h/(k_fin_val*t_fin));
-        cool.eta    = tanh(m_c*ht_coolant)/(m_c*ht_coolant);
-        cool.R      = 1/(cool.h*A_ht_cool_seg*cool.eta);
-    end
+        for l = 1:N_seg_cool
 
-    %% ---- Initial guess for coolant temperature distribution ---- %%
-    % T_cool(k+1) = coolant temperature at inlet to air segment k
-    % Counter-flow: T_cool increases from k=1 to k=N+1
-    % T_cool(1)   = T_h_o (coolant outlet, at air inlet side)
-    % T_cool(N+1) = T_h_i (coolant inlet, at air outlet side)
+            % Air state entering this cell (column l of the node arrays)
+            T_in = T_air_seg(k,l);     P_in = P_air_seg(k,l);
+            rho_in = rho_air_seg(k,l); v_in = v_air_seg(k,l);
+            Re_in = Re_air_seg(k,l);   Pr_in = Pr_air_seg(k,l);
 
-    T_cool = linspace(T_h_o, T_h_i, N_segments+1);
-
-    %% ---- Inner iteration: converge T_cool distribution ---- %%
-
-    tol_inner = 1e-3;   % K
-    max_iter  = 100;
-
-    for iter = 1:max_iter
-
-        T_cool_prev = T_cool;
-
-        %--- Air forward march (k=1 to N) ---%
-        % T_cool(k+1) is the coolant inlet temperature for segment k
-        T_air_iter    = zeros(1, N_segments+1);
-        P_air_iter    = zeros(1, N_segments+1);
-        T_air_iter(1) = T_c_i;
-        P_air_iter(1) = P3;
-        Q_iter        = zeros(1, N_segments);
-
-        for k = 1:N_segments
-            T_cool_k = T_cool(k+1);  % coolant entering segment k
-            node_k   = compute_node(T_air_iter(k), P_air_iter(k), T_cool_k);
-            cool_k   = compute_cool_node(T_cool_k);
-
-            R_cool_seg_k = cool_k.R;
-
-            % Nu for this segment
-            if node_k.Re < 2300
-                Nu_k = 3.66;
-            elseif node_k.Re < 3000
-                w        = (node_k.Re-2300)/(3000-2300);
-                Nu_turb  = (node_k.f/2)*(node_k.Re-1000)*node_k.Pr * ...
-                            (1+(d_h_air/(dx*k))^(2/3))*node_k.K / ...
-                            (1+12.7*sqrt(node_k.f/2)*(node_k.Pr^(2/3)-1));
-                Nu_k     = (1-w)*3.66 + w*Nu_turb;
+            if use_2d
+                T_cool_in = T_cool_seg(k,l);   % local coolant inlet of column l
             else
-                Nu_k     = (node_k.f/2)*(node_k.Re-1000)*node_k.Pr * ...
-                            (1+(d_h_air/(dx*k))^(2/3))*node_k.K / ...
-                            (1+12.7*sqrt(node_k.f/2)*(node_k.Pr^(2/3)-1));
+                T_cool_in = T_h_i;             % parallel manifold
+            end
+            x_air  = dx*k;                      % distance from the air inlet
+            x_cool = dy*l;                      % coolant path length to the end of column l (b_hx for 1D)
+            x_air_mid = dx*(k-0.5);
+            x_cool_mid = dy*(l-0.5);
+
+            for inner = 1:n_iter
+
+                if use_DNS
+                    if use_2d
+                        thermoturb_query_log('new_col');
+                    else
+                        thermoturb_query_log('new_inner');
+                    end
+                end
+
+                if use_2d
+                    T_cool_ref = T_cool_in;
+                else
+                    T_cool_ref = (T_h_i + T_cool_out) / 2;   % mean coolant temperature
+                end
+
+                %% -- coolant side -- %%
+                rho_cool = rho_EG(T_cool_ref);
+                v_cool   = (m_dot_pass_cool/N_fin_cool) / (rho_cool*A_o_coolant);
+                Re_cool  = rho_cool*v_cool*d_h_coolant / mu_EG(T_cool_ref);
+                Pr_cool  = mu_EG(T_cool_ref)*cp_EG_50_50(T_cool_ref)/k_EG(T_cool_ref);
+                % Pr_cool_wall = 
+                f_cool   = coolant_friction(Re_cool, Pr_cool, sr, x_cool_mid, d_h_coolant);   % Darcy
+                dp_cool  = f_cool*dy*(0.5*rho_cool*v_cool^2)/d_h_coolant;
+                K_cool = 1; %(Pr_cool/Pr_cool_wall)^0.11
+                % Nu_cool  = coolant_Nu(Re_cool, Pr_cool, f_cool, d_h_coolant, x_cool, use_2d);
+                Nu_cool  = coolant_Nu(Re_cool, Pr_cool, f_cool, d_h_coolant, x_cool_mid, K_cool, use_2d);
+                h_cool   = Nu_cool*k_EG(T_cool_ref)/d_h_coolant;
+                m_cool       = sqrt(2*h_cool/(k_fin_val*t_fin));
+                eta_fin_cool = tanh(m_cool*ht_coolant)/(m_cool*ht_coolant);
+                R_cool_seg   = 1/(h_cool*A_ht_cool_seg*eta_fin_cool);
+
+                %% -- air side -- %%
+                K_ratio = (T_in/T_cool_ref)^0.45;
+                C_c     = m_dot_air/N_seg_cool*cp_air(T_in);
+                C_h     = M_dot_coolant/N_segments*cp_EG_50_50(T_cool_ref);
+                C_min   = min(C_c, C_h);
+                C_star  = C_min/max(C_c, C_h);
+
+                % Boundary layer analysis
+                delta_BL = 0.37*x_air/(rho_in*v_in*x_air/mu_air(T_in))^(0.2);
+                b_inner  = max(0, b_t_air -2*sqrt(3)*delta_BL);
+                A_free   = sqrt(3)/4 * b_inner^2;
+                d_h_bulk = d_h_air;
+
+                % Friction and Nu are both evaluated here, at this cell's inlet node:
+                % Cf_in = Fanning (used in Nu), f_in = Darcy (used for dp_seg).
+                if use_DNS
+                    [~, Nu_air, Cf_in] = thermoturb_cached(Re_in, Pr_in, T_in, T_cool_ref, d_h_bulk, x_air_mid);
+                    f_in = 4*Cf_in;
+                else
+                    [Cf_in, f_in] = air_friction(Re_in, Pr_in, sr, x_air_mid, d_h_bulk);
+                    % Nu_air = air_Nu(Re_in, Pr_in, 4*Cf_in, d_h_bulk, x_air, K_ratio);   % Nu takes Darcy
+                    if k == 1
+                        local=false;
+                    else
+                        local=true;
+                    end
+                    Nu_air = air_Nu(Re_in, Pr_in, 4*Cf_in, d_h_bulk, x_air_mid, K_ratio, local);   % Nu takes Darcy
+                end
+                h_air       = Nu_air*k_air(T_in)/d_h_bulk;
+                m_air       = sqrt(2*h_air/(k_fin_val*t_fin));
+                eta_fin_air = tanh(m_air*ht_air)/(m_air*ht_air);
+                R_air       = 1/(h_air*A_ht_air_seg*eta_fin_air);
+
+                %% -- heat transfer -- %%
+                R_tot   = R_air + R_cond_seg + R_cool_seg;
+                UA_unit = 1/R_tot;
+                NTU     = UA_unit/C_min;
+                eps     = epsilon_counterflow(NTU, C_star);
+
+                Q_seg  = eps*C_min*(T_cool_in - T_in);
+                dp_seg = f_in*(dx/d_h_air)*0.5*rho_in*v_in^2;
+
+                % Outlet node conditions
+                T_out = T_in + Q_seg/C_c;
+                P_out = P_in - dp_seg;
+                T_cool_out_new = T_cool_in - Q_seg/C_h;
+
+                rho_out = rho_air(P_out, T_out);
+                v_out   = (m_dot_pass_air/N_fin_air) / (rho_out*A_o_air);
+                Re_out  = rho_out*v_out*d_h_bulk / mu_air(T_out);
+                Pr_out  = mu_air(T_out)*cp_air(T_out)/k_air(T_out);
+
+                if use_2d
+                    break                                   % direct march: no inner iteration
+                end
+                difference = T_cool_out_new - T_cool_out;
+                T_cool_out = T_cool_out_new;
+                if abs(difference) < tol_cool
+                    break
+                elseif inner == max_cool
+                    fprintf("Segment %.0f did not converge, T_cool_out: %.2f K, diff: %.5f  ", k, T_cool_out, difference)
+                end
             end
 
-            h_air_k   = Nu_k*k_air(node_k.T)/d_h_air;
-            m_air_k   = sqrt(2*h_air_k/(k_fin_val*t_fin));
-            eta_fin_k = tanh(m_air_k*ht_air)/(m_air_k*ht_air);
-            R_air_k   = 1/(h_air_k*A_ht_air_seg*eta_fin_k);
-            R_tot_k   = R_air_k + R_cond_seg + R_cool_seg_k;
-            UA_k      = 1/R_tot_k;
-            NTU_k     = UA_k/node_k.C_min;
-            eps_k     = epsilon_counterflow(NTU_k, node_k.C_star);
+            %% -- store this cell -- %%
+            if use_2d
+                T_mean_h_seg = (T_cool_in + T_cool_out_new) / 2;
+            else
+                T_mean_h_seg = T_cool_ref;
+            end
+            if T_out == T_in || T_mean_h_seg == T_out || T_mean_h_seg == T_in
+                T_mean_c_seg = T_mean_h_seg;               % degenerate LMTD (near-zero Q_seg)
+            else
+                T_lm_seg = ((T_mean_h_seg-T_out)-(T_mean_h_seg-T_in)) / ...
+                           log((T_mean_h_seg-T_out)/(T_mean_h_seg-T_in));
+                T_mean_c_seg = T_mean_h_seg - T_lm_seg;
+            end
+            T_mean_c_arr(k,l) = T_mean_c_seg;
+            T_mean_h_arr(k,l) = T_mean_h_seg;
 
-            % Driving difference: local coolant inlet minus local air inlet
-            Q_iter(k) = eps_k*node_k.C_min*(T_cool_k - node_k.T);
+            Q_seg_arr(k,l)   = Q_seg;      dp_seg_arr(k,l)  = dp_seg;
+            Nu_seg_arr(k,l)  = Nu_air;     h_air_seg(k,l)   = h_air;
+            eta_fin_seg(k,l) = eta_fin_air;
+            UA_seg_arr(k,l)  = UA_unit;    eps_seg_arr(k,l) = eps;
+            NTU_seg_arr(k,l) = NTU;        K_seg(k,l)       = K_ratio;
 
-            % Air outlet
-            T_air_iter(k+1) = node_k.T + Q_iter(k)/(M_dot_3*cp_air(node_k.T));
-            dp_k            = node_k.f*(dx/d_h_air)*0.5*node_k.rho*node_k.v^2;
-            P_air_iter(k+1) = P_air_iter(k) - dp_k;
+            v_cool_seg(k,l)  = v_cool;     dp_cool_seg(k,l)    = dp_cool;
+            Re_cool_seg(k,l) = Re_cool;    h_cool_seg(k,l)     = h_cool;
+            Pr_cool_seg(k,l) = Pr_cool;    Nu_cool_seg(k,l)    = Nu_cool;
+            f_coolant_seg(k,l)  = f_cool;  Cf_coolant_seg(k,l) = f_cool/4;
+
+            delta_BL_seg(k,l) = delta_BL;  A_free_seg(k,l) = A_free;
+            d_h_bulk_seg(k,l) = d_h_bulk;
+
+            T_cool_seg(k,l+1) = T_cool_out_new;
+
+            % Air outlet node = inlet of segment k+1
+            T_air_seg(k+1,l)  = T_out;     P_air_seg(k+1,l)   = P_out;
+            v_air_seg(k+1,l)  = v_out;     Re_air_seg(k+1,l)  = Re_out;
+            Pr_air_seg(k+1,l) = Pr_out;    rho_air_seg(k+1,l) = rho_out;
+            Cf_air_seg(k,l) = Cf_in;       f_air_seg(k,l)   = f_in;    % evaluated in this cell
+
+            M_out = v_out/sqrt(gamma_air(cp_air(T_out))*R*T_out);
+            M_air_seg(k+1,l)   = M_out;
+            P_0_air_seg(k+1,l) = P_out*((1+((gamma_air(cp_air(T_out))-1).*M_out.^2/2)).^ ...
+                ((gamma_air(cp_air(T_out)))./(gamma_air(cp_air(T_out))-1)));
+            T_0_air_seg(k+1,l) = T_out*(1+((gamma_air(cp_air(T_out))-1)*M_out.^2)/2);
+
+            h_coolant = h_cool;     % shared scalar output (last cell)
         end
-
-        %--- Coolant reverse march (k=N to 1) ---%
-        % Coolant enters at T_cool(N+1) = T_h_i (fixed boundary)
-        % and cools as it moves toward k=1
-        T_cool(N_segments+1) = T_h_i;  % enforce known boundary
-
-        for k = N_segments:-1:1
-            % Coolant flows counter to air: from segment N down to segment 1
-            % Coolant inlet to segment k is T_cool(k+1)
-            % Energy balance on coolant side: coolant loses Q_iter(k)
-            T_cool(k) = T_cool(k+1) - Q_iter(k) / ...
-                        (M_dot_coolant_max*cp_EG_50_50(T_cool(k+1)));
-        end
-
-        % Enforce known coolant outlet boundary — compare against T_h_o
-        % as a convergence diagnostic (not enforced as hard constraint
-        % since Q_iter drives the distribution)
-        fprintf("Inner iter %d: T_cool(1) = %.4f K, T_h_o = %.4f K, residual = %.6f K\n", ...
-                iter, T_cool(1), T_h_o, T_cool(1)-T_h_o);
-
-        % Check convergence of T_cool distribution
-        if max(abs(T_cool - T_cool_prev)) < tol_inner
-            fprintf("Inner coolant iteration converged in %d iterations\n", iter);
-            break
-        end
-
-        if iter == max_iter
-            warning("Inner coolant iteration did not converge at L=%.4f m", L);
-        end
-
     end
 
-    %% ---- Final air march with converged T_cool ---- %%
-    % Populate all segment and node arrays
+    %% ---- Accounting (reads the tracking arrays back) ---- %%
 
-    node = compute_node(T_c_i, P3, T_cool(2));
+    Q_total = sum(Q_seg_arr(:));
 
-    T_air_seg(1)  = node.T;   P_air_seg(1)  = node.P;
-    v_air_seg(1)  = node.v;   Re_air_seg(1) = node.Re;
-    Pr_air_seg(1) = node.Pr;  K_seg(1)      = node.K;
-    f_air_seg(1)  = node.f;
-    T_cool_seg(1) = T_cool(1);
+    % mean over coolant columns (no-op for 1D), then sum over segments
+    dp_hx_disc = inlet_dp + sum(mean(dp_seg_arr,2));
 
-    for k = 1:N_segments
+    T_c_o_disc = mean(T_air_seg(end,:));
 
-        T_cool_k = T_cool(k+1);  % coolant inlet to segment k
-        cool_k   = compute_cool_node(T_cool_k);
+    fprintf("\nQ_total = %.2f W,  T_air_out = %.2f K\n", Q_total, T_c_o_disc);
 
-        R_cool_seg_k = cool_k.R;
+    T_h_o_predicted = mean(T_cool_seg(:,end));
 
-        if node.Re < 2300
-            Nu_seg = 3.66;
-        elseif node.Re < 3000
-            w       = (node.Re-2300)/(3000-2300);
-            Nu_turb = (node.f/2)*(node.Re-1000)*node.Pr * ...
-                      (1+(d_h_air/(dx*k))^(2/3))*node.K / ...
-                      (1+12.7*sqrt(node.f/2)*(node.Pr^(2/3)-1));
-            Nu_seg  = (1-w)*3.66 + w*Nu_turb;
-        else
-            Nu_seg  = (node.f/2)*(node.Re-1000)*node.Pr * ...
-                      (1+(d_h_air/(dx*k))^(2/3))*node.K / ...
-                      (1+12.7*sqrt(node.f/2)*(node.Pr^(2/3)-1));
-        end
-
-        h_air_k   = Nu_seg*k_air(node.T)/d_h_air;
-        m_air_k   = sqrt(2*h_air_k/(k_fin_val*t_fin));
-        eta_fin_k = tanh(m_air_k*ht_air)/(m_air_k*ht_air);
-        R_air_k   = 1/(h_air_k*A_ht_air_seg*eta_fin_k);
-        R_tot_k   = R_air_k + R_cond_seg + R_cool_seg_k;
-        UA_k      = 1/R_tot_k;
-        NTU_k     = UA_k/node.C_min;
-        eps_k     = epsilon_counterflow(NTU_k, node.C_star);
-
-        Q_seg  = eps_k*node.C_min*(T_cool_k - node.T);
-        dp_seg = node.f*(dx/d_h_air)*0.5*node.rho*node.v^2;
-
-        % Store segment arrays
-        Q_seg_arr(k)   = Q_seg;
-        dp_seg_arr(k)  = dp_seg;
-        Nu_seg_arr(k)  = Nu_seg;
-        h_air_seg(k)   = h_air_k;
-        eta_fin_seg(k) = eta_fin_k;
-        UA_seg_arr(k)  = UA_k;
-        NTU_seg_arr(k) = NTU_k;
-        eps_seg_arr(k) = eps_k;
-
-        Q_total  = Q_total  + Q_seg;
-        dp_total = dp_total + dp_seg;
-
-        % Outlet node
-        T_out = node.T + Q_seg/(M_dot_3*cp_air(node.T));
-        P_out = node.P - dp_seg;
-
-        % Use T_cool(k+1) for the outlet node K and C_star
-        % (next segment's coolant inlet is T_cool(k+2), but for the
-        %  outlet node itself we use T_cool(k+1) as representative)
-        if k < N_segments
-            node = compute_node(T_out, P_out, T_cool(k+2));
-        else
-            node = compute_node(T_out, P_out, T_cool(N_segments+1));
-        end
-
-        T_air_seg(k+1)  = node.T;   P_air_seg(k+1)  = node.P;
-        v_air_seg(k+1)  = node.v;   Re_air_seg(k+1) = node.Re;
-        Pr_air_seg(k+1) = node.Pr;  K_seg(k+1)      = node.K;
-        f_air_seg(k+1)  = node.f;
-        T_cool_seg(k+1) = T_cool(k+1);
-
-        % Update shared scalar outputs
-        v_channel_coolant = cool_k.v;
-        Re_coolant        = cool_k.Re;
-        h_coolant         = cool_k.h;
-        h_air             = h_air_k;
-        NTU               = NTU_k;
-        R_tot             = R_tot_k;
-        UA_unit           = UA_k;
-
-    end
-
-    T_cool_seg(N_segments+1) = T_cool(N_segments+1);
-    T_c_o_disc = T_air_seg(end);
-    dp_hx_disc = dp_total;
-
-    fprintf("Q_total = %.2f W,  T_air_out = %.2f K\n", Q_total, T_air_seg(end));
-    % fprintf("Coolant outlet T_cool(1) = %.2f K,  T_h_o requirement = %.2f K,  deviation = %.4f K\n", ...
-    %         T_cool(1), T_h_o, T_cool(1) - T_h_o);
-    % fprintf("T_cool distribution: %f", T_cool_seg);
-    fprintf("T_cool distribution (K): ");
-    fprintf("%.4f  ", T_cool_seg);
-    fprintf("\n");
+    fprintf("Predicted mixed coolant outlet = %.4f K,  T_h_o requirement = %.4f K,  deviation = %.4f K\n", ...
+        T_h_o_predicted, T_h_o, T_h_o_predicted - T_h_o);
 
 end
 
-%% ---- Length iteration ---- %%
+function Q = Q_only(L)
+    [Q, ~] = Q_pred_L(L);
+end
+
+function T = T_only(L)
+    [~, T] = Q_pred_L(L);
+end
+
+%% ---- Length iteration (shared) ---- %%
 
 fprintf("Total heat loss per module = %f W\n", Q_tot/n_modules);
 
 L_low  = 1e-3;
-L_high = 1;
+L_high = 0.5;
 
 while true
-    Q_high = Q_pred_L_disc(L_high);
-    fprintf("L bracket upper = %.4f m,  Q = %.2f W\n", L_high, Q_high);
-    if Q_high >= (Q_tot/n_modules)
+
+    [Q_high, T_high] = Q_pred_L(L_high);
+    fprintf("L bracket upper = %.4f m,  Q = %.2f W,  T_h_o_pred = %.4f K\n", ...
+        L_high, Q_high, T_high);
+
+    Q_satisfied = Q_high >= Q_tot/n_modules;
+    T_satisfied = T_high <= T_h_o;
+    T_close = abs(T_high - T_h_o) <= tol_T;
+
+    if T_satisfied && Q_satisfied
+        % Case 1: both satisfied — Solve for Q %%prefer T_h_o residual
+        fprintf("Case 1: both constraints satisfied at L_high = %.4f m\n", L_high);
         break
+
+    elseif Q_satisfied && ~T_satisfied
+        % Case 2: Q satisfied but T_h_o not reached
+        if T_close
+            fprintf('Case 2a: Q satisfied and T within tol_T at L_high = %.4f m\n', L_high);
+            break
+        else
+            fprintf('Case 2b: Q satisfied and T not within tol_T\n');
+            break
+        end
+
+    elseif T_satisfied && ~Q_satisfied
+        % Case 3: T satisfied but Q not — increase L until Q is also satisfied
+        fprintf("Case 3: T_h_o satisfied but Q insufficient — increasing L_high\n");
+
+    else
+        % Case 4: neither satisfied — increase L_high
+        fprintf("Case 4: neither constraint satisfied — increasing L_high\n");
+
     end
+
     L_high = L_high*2;
     if L_high > 20
-        fprintf("Max heat loss possible at L = %.4f m is Q = %.2f W\n", ...
-                L_high/2, Q_pred_L_disc(L_high/2));
+        [Q_best, T_best] = Q_pred_L(L_high/2);
+        fprintf("Max achievable: Q = %.2f W, T_h_o_pred = %.4f K at L = %.4f m\n", ...
+            Q_best, T_best, L_high/2);
         error('L_high grew too large — check inputs or UA_unit');
     end
+
 end
 
-L_solution = fzero(@(L) Q_pred_L_disc(L) - (Q_tot/n_modules), [L_low, L_high]);
+if T_satisfied && Q_satisfied
+    % Case 1: T_h_o constraint met — solve on T_h_o residual
+    Q_residual = @(L) Q_only(L) - Q_tot/n_modules;
+    L_solution = fzero(Q_residual, [L_low, L_high]);
+    fprintf("L solved on Q residual: L = %.4f m\n", L_solution);
+elseif T_close && Q_satisfied
+    % Case 2a: T within tolerance of T_h_o - solve on Q residual
+    Q_residual = @(L) Q_only(L) - Q_tot/n_modules;
+    L_solution = fzero(Q_residual, [L_low, L_high]);
+    fprintf("L solved on Q residual: L = %.4f m\n", L_solution);
+elseif Q_satisfied
+    % Case 2b: T_h_o not reachable — solve on Q residual
+    Q_residual = @(L) Q_only(L) - Q_tot/n_modules;
+    L_solution = fzero(Q_residual, [L_low, L_high]);
+    fprintf("L solved on Q residual: L = %.4f m\n", L_solution);
+end
+
 fprintf("Effective length of HX = %.4f m\n", L_solution);
+[Q_pred_solution, T_h_o_solution] = Q_pred_L(L_solution);
 
-Q_pred_L_disc(L_solution);
+%% ---- Estimate Outlet pressure loss (Kays & London, 1960) ---- %%
+% Array-mean form; for N_cool_seg == 0 (N_seg_cool == 1) numerically
+% identical to indexing the single column directly.
 
-dp_hx = dp_hx_disc;
+Ke = kays_london_triangular(sigma, mean(Re_air_seg(end,:)), 'Ke', false);
+outlet_dp = mean(v_air_seg(end,:))^2 * rho_air(mean(P_air_seg(end,:)), mean(T_air_seg(end,:))) / 2 * (1 - sigma^2 - Ke);
+
+fprintf('Exit pressure rise: %.2f Pa\n', outlet_dp)
+
+
+dp_hx = dp_hx_disc - outlet_dp;
 fprintf("Total pressure loss = %.2f Pa\n", dp_hx);
 
 %% ---- Exit state variables ---- %%
@@ -449,7 +661,7 @@ if P4 < 0
     error('HX is unfeasible; Check inputs');
 end
 
-v4      = M_dot_3/(pi*d3*d3*rho_air(P4,T4)/4);
+v4      = m_dot_air/(pi*d3*d3*rho_air(P4,T4)/4);
 a4      = sqrt(gamma_air(cp_air(T4))*R*T4);
 M4      = v4/a4;
 P4_0    = P4*((1+((gamma_air(cp_air(T4))-1).*M4.^2/2)).^ ...
@@ -461,15 +673,14 @@ M_dot_4 = rho_air(P4,T4)*A4*v4;
 
 A_p_air_out    = (b_t_air*0.5) + ((b_t_air*0.5)+(t_fin/sqrt(2)));
 A_f_air_out    = sqrt(ht_air^2+(b_t_air*0.5)^2) + ...
-                 sqrt(((b_t_air*0.5)+(t_fin/sqrt(2)))^2 + ...
-                      (ht_air+(t_fin/sqrt(2)))^2);
+                 sqrt(((b_t_air*0.5)+(t_fin/sqrt(2)))^2 + (ht_air+(t_fin/sqrt(2)))^2);
 A_ht_air_total = ((A_f_air_out*N_fin_air*N_air_pass) + ...
                   (A_p_air_out*N_fin_air*N_air_pass))*L_solution;
 
 F_drag_hx = dp_hx*A_ht_air_total;
 
 pres_term = (P3*A3) - (P4*A4);
-mom_term  = M_dot_3*(-v3+v4);
+mom_term  = m_dot_air*(-v3+v4);
 drag_HX   = pres_term - mom_term;
 
 %% ---- Mass of HX ---- %%
@@ -486,15 +697,11 @@ M_hx        = 2700*V_core;
 
 %% ---- Coolant-side pressure drop ---- %%
 
-counter = counter+1;
-if counter > 200
-    error('exiting HX');
-end
-
 N_fin_coolant   = 2*L_solution/(2*t_fin/sqrt(2)+b_t_coolant);
-f_coolant       = (1/(-1.8*log10((0.0015/d_h_coolant)^1.11 + ...
-                  (6.9/Re_coolant))))^2;
-dp_coolant_loop = f_coolant*b_hx*(0.5*1082*v_channel_coolant^2)/d_h_coolant;
+% sum(dp_cool_seg,2) then mean collapses to mean(dp_cool_seg) when
+% N_seg_cool == 1 -- no if/else needed.
+dp_cool_totals  = sum(dp_cool_seg,2);
+dp_coolant_loop = mean(dp_cool_totals);
 fprintf("Coolant side pressure loss = %.4f bar\n", dp_coolant_loop/1e5);
 
 end

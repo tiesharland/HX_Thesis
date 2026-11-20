@@ -97,7 +97,7 @@ Pr_coolant = mu_EG(T_mean_h)*cp_EG_50_50(T_mean_h)/k_EG(T_mean_h);
 Pr_air     = mu_air(T_mean_c)*cp_air(T_mean_c)/k_air(T_mean_c);
 
 
-[dp_coolant,d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, v_channel_air, v_channel_coolant,d_h_coolant, A_o_coolant, A_o_air, Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, Q_pred_sol, T_cool_out, Pr_air, f_air, Nu_air, inlet_dp] = HX_design1(e,r,hx_theta, counter, x ,A3,v3, R,P3,P3_0, h, d3, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant, M_dot_3, T3);
+[dp_coolant,d_h_air, M_dot_4, b_t_air, b_t_coolant, dp_hx, N_fin_air, N_fin_coolant, N_air_pass, N_coolant_pass, NTU, R_tot, v_channel_air, v_channel_coolant,d_h_coolant, A_o_coolant, A_o_air, Re_air, Re_coolant, h_air, h_coolant, L_solution, UA_unit, v4, P4_0, M4, T4, T4_0, P4, F_drag_hx, M_hx, A4, drag_HX, Q_pred_sol, T_cool_out, Pr_air, f_air, Nu_air, f_hx, Pr_coolant, f_coolant, Nu_coolant, inlet_dp, outlet_dp] = HX_design1(e,r,hx_theta, counter, x ,A3,v3, R,P3,P3_0, h, d3, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant, M_dot_3, T3);
 coolant_pres_drop = dp_coolant;
 
 %% ----------------------------------------------- Puller fan ---------------------------------------------- %%
@@ -121,7 +121,7 @@ end
 %% ----------------------------------------------- Pressure difference correction ----------------------------------------------%%
 
 % Without HX_deltaT in iteration
-[P1,P2,P3,P4,P5,P6,P1_0,P2_0,P3_0,P4_0,P5_0,P6_0, M1, M2, M3, M4, M5, M6,  v1,v2,v3,v4,v5,v6, T1, T1_0, T2, T2_0, T3,T3_0,T4, T4_0, T5, T5_0, T6, T6_0, M_dot_2, M_dot_3, M_dot_4, M_dot_5, M_dot_6,P_shaft, M_hx, dp_coolant, L_solution, Q_pred_sol, T_cool_out, dp_hx, drag_HX, h_air, v_channel_air, Re_air, Pr_air, f_air, Nu_air, f_hx, inlet_dp] = pressure_eq_mDot_adjust_9thJan_noExhaust(e,r,m_dot_streamtube, fan, M_dot_des, FPR_des, hx_theta,fpr_init, M_dot_in, flight_phase, theta_max_diff,d3,M_dot_FOD, M_dot_comp,counter, A2_init, d2_init,AR_noz, dp_tot_prop, P1,P_inf, P_inf_tot, T_inf, V_inf, Rho_inf, AR_init, a_inf, Gamma_inf, flag, mu_inf,A2,v2, M2, R,P2,P2_0,h,d2,T2_0, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant, M_dot_2, M_dot_3, T2,P3,P3_0,T3,T3_0,v3,M3,A4,P4,P4_0, T4, T4_0, v4, M4,P5,P5_0,M5,T5,T5_0,v5,P6,P6_0,M6,T6,T6_0,v6, M1, T1, T1_0, Rho_1, v1, P1_0, dia_prop);
+[P1,P2,P3,P4,P5,P6,P1_0,P2_0,P3_0,P4_0,P5_0,P6_0, M1, M2, M3, M4, M5, M6,  v1,v2,v3,v4,v5,v6, T1, T1_0, T2, T2_0, T3,T3_0,T4, T4_0, T5, T5_0, T6, T6_0, M_dot_2, M_dot_3, M_dot_4, M_dot_5, M_dot_6,P_shaft, M_hx, dp_coolant, L_solution, Q_pred_sol, T_cool_out, dp_hx, drag_HX, h_air, v_channel_air, Re_air, Pr_air, f_air, Nu_air, f_hx, inlet_dp, outlet_dp, Pr_coolant, f_coolant, Nu_coolant, Re_coolant, h_coolant, v_channel_coolant, d_h_coolant] = pressure_eq_mDot_adjust_9thJan_noExhaust(e,r,m_dot_streamtube, fan, M_dot_des, FPR_des, hx_theta,fpr_init, M_dot_in, flight_phase, theta_max_diff,d3,M_dot_FOD, M_dot_comp,counter, A2_init, d2_init,AR_noz, dp_tot_prop, P1,P_inf, P_inf_tot, T_inf, V_inf, Rho_inf, AR_init, a_inf, Gamma_inf, flag, mu_inf,A2,v2, M2, R,P2,P2_0,h,d2,T2_0, T_h_o, n_modules, T_h_i, T_c_i, T_c_o, T_mean_h, T_mean_c, Q_tot, C_h, C_c, C_star,Pr_air, Pr_coolant, M_dot_coolant, M_dot_2, M_dot_3, T2,P3,P3_0,T3,T3_0,v3,M3,A4,P4,P4_0, T4, T4_0, v4, M4,P5,P5_0,M5,T5,T5_0,v5,P6,P6_0,M6,T6,T6_0,v6, M1, T1, T1_0, Rho_1, v1, P1_0, dia_prop);
 % % With HX_deltaT in iteration
 % [P1,P2,P3,P4,P5,P6,P1_0,P2_0,P3
 
@@ -210,6 +210,14 @@ results.T_mean_c     = T_mean_c;
 results.f_hx         = f_hx;
 results.inlet_dp     = inlet_dp;
 results.T_mean_h     = T_mean_h;
+results.outlet_dp    = outlet_dp;
+results.Pr_coolant   = Pr_coolant;
+results.f_coolant    = f_coolant;      % Darcy
+results.Nu_coolant   = Nu_coolant;
+results.Re_coolant   = Re_coolant;
+results.h_coolant    = h_coolant;
+results.v_channel_coolant = v_channel_coolant;
+results.d_h_coolant  = d_h_coolant;
 
 %%%--- SAVE (same scheme as run_disc_model_fwdpass; "lumped" in place of
 %%%     the <N_segments>[-<N_cool_seg>][_dns] model-variant tag) ---%%%

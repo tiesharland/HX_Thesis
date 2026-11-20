@@ -63,8 +63,15 @@ T_model  = results_2D.T_air_seg(:, l)';
 h_model  = results_2D.h_air_seg(:, l)';
 Nu_model = results_2D.Nu_air_seg(:, l)';
 P_model  = results_2D.P_air_seg(:, l)';
-v_model  = results_2D.v_channel_seg(:, l)';
-mdot_model = results_2D.m_dot_seg./results_2D.N_fin_air*2./results_2D.N_air_pass;
+v_model  = results_2D.v_air_seg(:, l)';
+mdot_model = results_2D.m_dot_seg./results_2D.N_fin_air*2/results_2D.N_air_pass;
+mdot_model = reshape(mdot_model, 1, []);   % m_dot_seg is a single bulk mass-flow trace, not
+                                            % indexed by coolant-side segment l like T_air_seg /
+                                            % h_air_seg are (mass flow through a cross-section
+                                            % doesn't depend on which coolant lane you're looking
+                                            % at) - so no (:, l) indexing here. This reshape just
+                                            % normalizes row-vs-column orientation to match
+                                            % x_bounds; size should now read [1 N_segments+1].
 
 %% ---- CFD, all stations: T, P, V and mdot are non-singular at z=0 (inlet) ---- %%
 x_cfd_all  = -results_cfd.z * 1000;        % flip sign (flow runs in -z), m -> mm

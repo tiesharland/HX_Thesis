@@ -48,8 +48,10 @@ function comparison = compare_cfd_meshes_vs_2d(cfd, varargin)
 %                  as Pbulk + this value, i.e. the actual pressure, comparable to the
 %                  model's P_air_seg. Leave empty to fall back to the old behaviour
 %                  (CFD trace shifted to start at the first model's inlet pressure).
-%   'lumped_results' : lumped-model results struct to draw when 'results_2D' is
-%                  given directly (otherwise it is read from the results folder).
+%   'lumped_results' : lumped-model results struct, or a cell array of them (e.g. HX_design1 and
+%                  HX_design1_v2), to draw when 'results_2D' is given directly (otherwise it is
+%                  read from the results folder).
+%   'lumped_labels' : legend names for the lumped results, same order (default 'Lumped model').
 %   'cfd_coolant' : optional cell array (same length/order as cfd) of
 %                  process_wall_CFD_data structs for the COOLANT side (the complete
 %                  coolant flow, processed with d_h_coolant and @k_EG). The coolant
@@ -101,7 +103,7 @@ function comparison = compare_cfd_meshes_vs_2d(cfd, varargin)
 % Re_air_seg) and wall y+ (CFD only).
 %
 % Cf: the CFD skin friction coefficient (Fanning, from wall shear stress) is compared with the
-% model's air-side f_air_seg, which is already Fanning (Konakov 0.25*(...)^-2, or the DNS Cf).
+% model's air-side Cf_air_seg, which is already Fanning (Konakov 0.25*(...)^-2, or the DNS Cf).
 % On the coolant side the model's f is Darcy, so f/4 is used there. For the 2D model only coolant-side
 % segment l_index (default 1) is used. The lumped model gives one constant f.
 %
@@ -127,6 +129,7 @@ addParameter(p, 'use_DNS', [false true]);
 addParameter(p, 'include_1d', true);
 addParameter(p, 'include_lumped', true);
 addParameter(p, 'lumped_results', []);
+addParameter(p, 'lumped_labels', {});
 addParameter(p, 'cfd_P_operating', []);
 addParameter(p, 'cfd_coolant', {});
 addParameter(p, 'cfd_coolant_ends', {});
@@ -151,6 +154,7 @@ lab2D  = p.Results.labels_2D;
 dns2D  = [];
 is1d   = [];
 lumped = [];
+lumped_names = {};
 if isstruct(res2D), res2D = {res2D}; end
 if ~isempty(res2D)
     if isempty(lab2D)
@@ -158,7 +162,11 @@ if ~isempty(res2D)
     elseif numel(lab2D) ~= numel(res2D)
         error('compare_cfd_meshes_vs_2d:labels', 'labels_2D has %d entries but %d 2D results were given.', numel(lab2D), numel(res2D));
     end
-    if ~isempty(p.Results.lumped_results), lumped = p.Results.lumped_results; end
+    if ~isempty(p.Results.lumped_results)
+        lumped = p.Results.lumped_results;
+        if isstruct(lumped), lumped = {lumped}; end
+        lumped_names = p.Results.lumped_labels;
+    end
     for k = 1:numel(res2D)
         dns2D(k) = isfield(res2D{k}, 'use_DNS') && res2D{k}.use_DNS; %#ok<AGROW>
         is1d(k)  = isfield(res2D{k}, 'N_cool_seg') && res2D{k}.N_cool_seg == 0; %#ok<AGROW>
@@ -204,7 +212,7 @@ else
         fL = fullfile('results', sprintf('id-%d', id), lumped_results_filename(id, solve_T));
         if isfile(fL)
             ld = load(fL, 'results');
-            lumped = ld.results;
+            lumped = {ld.results};
             fprintf('Loaded lumped results: %s\n', fL);
         else
             warning('compare_cfd_meshes_vs_2d:missingLumped', 'No saved lumped result: %s -- skipped.', fL);
@@ -231,13 +239,13 @@ end
 
 %% ---- Styles ---- %%
 % CFD: greys, light (first/coarsest) to dark (last/finest), solid, with markers.
-% Models: colour = correlation (blue) or DNS (red); line style = number of coolant-side
-% segments (1D model solid, then dashed, dash-dot, dotted for increasing N_cool_seg).
+% Models: hue = correlation (blue) or DNS (red); within each hue the shade goes from light (1D
+% model) to dark (most coolant-side segments). All lines solid. Marker = model family:
+% o correlation, s DNS; test files (HX_design1_disc_test etc.) use ^ and d instead.
 grey    = linspace(0.75, 0.1, max(n_cfd, 2));
 mk_cfd  = {'x', '+', 's', '^', 'v', 'o'};
-col_corr_model = [0.122 0.341 0.600];    % muted blue  : correlation-based
-col_dns_model  = [0.700 0.220 0.200];    % muted red   : DNS-based
-ls_list = {'-', '--', '-.', ':'};
+ramp_corr = [0.70 0.82 0.93; 0.04 0.18 0.42];    % light -> dark blue
+ramp_dns  = [0.96 0.74 0.68; 0.50 0.08 0.08];    % light -> dark red
 Nc_all  = zeros(1, n_2d);
 for k = 1:n_2d
     if is1d(k), Nc_all(k) = 0; else, Nc_all(k) = res2D{k}.N_cool_seg; end
@@ -245,9 +253,16 @@ end
 Nc_levels = unique(Nc_all);               % sorted: 0 (1D) first
 sty2D = cell(1, n_2d);
 for k = 1:n_2d
-    if dns2D(k), c = col_dns_model; m = 's'; else, c = col_corr_model; m = 'o'; end
-    ls = ls_list{mod(find(Nc_levels == Nc_all(k), 1) - 1, numel(ls_list)) + 1};
-    sty2D{k} = struct('color', c, 'marker', m, 'ls', ls);
+    is_test = contains(lab2D{k}, 'test', 'IgnoreCase', true) || ...
+        (isfield(res2D{k}, 'hx_function') && contains(res2D{k}.hx_function, 'test', 'IgnoreCase', true));
+    if dns2D(k), ramp = ramp_dns; m = ternary(is_test, 'd', 's'); else, ramp = ramp_corr; m = ternary(is_test, '^', 'o'); end
+    if numel(Nc_levels) > 1
+        t = (find(Nc_levels == Nc_all(k), 1) - 1)/(numel(Nc_levels) - 1);
+    else
+        t = 0.5;
+    end
+    c = (1 - t)*ramp(1,:) + t*ramp(2,:);
+    sty2D{k} = struct('color', c, 'marker', m, 'ls', '-');
 end
 lw = 1.2; ms = 4;
 
@@ -286,6 +301,9 @@ if has_2d
         sprintf('Air-side wall temperature: CFD vs model (= coolant temperature, column %d)', l));
 end
 
+fig_dTa = new_fig('Air-side Wall - Bulk Temperature Difference: CFD vs model', 'Position along HX [mm]', 'T_{wall} - T_{bulk} [K]', ...
+    sprintf('Air-side wall minus bulk temperature: CFD vs model (wall = coolant temperature, column %d)', l));
+
 comparison.l_index = l;
 comparison.cfd_labels = cfd_labels;
 comparison.labels_2D = lab2D;
@@ -313,6 +331,7 @@ for k = 1:n_cfd
     plot(fig_m.ax,  x_all, r.mdot, args{:});
     plot(fig_Nu.ax, x_v,   r.Nu(valid), args{:});
     if has_2d, plot(fig_Tw.ax, x_all, r.Twall, args{:}); end
+    plot(fig_dTa.ax, x_all, r.Twall - r.Tbulk, args{:});
     if isfield(r, 'rho'), plot(fig_rho.ax, x_all, r.rho, args{:}); end
     if isfield(r, 'Cf'),  plot(fig_cf.ax,  x_all, r.Cf,  args{:}); end
     if isfield(r, 'Re'),  plot(fig_Re.ax,  x_all, r.Re,  args{:}); end
@@ -334,7 +353,7 @@ for k = 1:n_2d
     plot(fig_T.ax,  x_b, r.T_air_seg(:, col(k))',       args_node{:});
     plot(fig_P.ax,  x_b, r.P_air_seg(:, col(k))',       args_node{:});
     plot(fig_h.ax,  x_m, r.h_air_seg(:, col(k))',       args_node{:});
-    plot(fig_v.ax,  x_b, r.v_channel_seg(:, col(k))',   args_node{:});
+    plot(fig_v.ax,  x_b, r.v_air_seg(:, col(k))',   args_node{:});
     plot(fig_m.ax,  x_b, mdot_model,               args_node{:});
     plot(fig_Nu.ax, x_m, r.Nu_air_seg(:, col(k))',      args_node{:});
     if ~is1d(k) && isfield(r, 'T_cool_seg')
@@ -344,6 +363,11 @@ for k = 1:n_2d
         args_w = args_node;  args_w{end} = sprintf('%s, coolant inlet T of column %d', lab2D{k}, col(k));
         plot(fig_Tw.ax, x_m, Tw_model, args_w{:});
         comparison.model2D(k).T_wall = Tw_model;
+        % Wall minus bulk, per air segment: model wall (coolant entering the column) minus the
+        % mean of the segment's inlet and outlet air temperature
+        T_bulk_seg = 0.5*(r.T_air_seg(1:end-1, col(k)) + r.T_air_seg(2:end, col(k)))';
+        plot(fig_dTa.ax, x_m, Tw_model - T_bulk_seg, args_node{:});
+        comparison.model2D(k).dT_wall_bulk = Tw_model - T_bulk_seg;
         if isfield(r, 'T_mean_h_arr')
             plot(fig_Tw.ax, x_m, r.T_mean_h_arr(:, col(k))', s.ls, 'Color', 0.55*s.color + 0.45, 'LineWidth', 1, ...
                 'DisplayName', sprintf('%s, column %d mean', lab2D{k}, col(k)));
@@ -360,45 +384,60 @@ for k = 1:n_2d
         plot(fig_Re.ax, x_b, r.Re_air_seg(:, col(k))', args_node{:});
     end
     if has_cf
-        plot(fig_cf.ax, x_b, r.f_air_seg(:, col(k))', args_node{:});
-        comparison.model2D(k).Cf = r.f_air_seg(:, col(k))';
+        plot(fig_cf.ax, x_m, r.Cf_air_seg(:, col(k))', args_node{:});   % segment array, like Nu
+        comparison.model2D(k).Cf = r.Cf_air_seg(:, col(k))';
     end
     comparison.model2D(k).label = lab2D{k};
     comparison.model2D(k).x_bounds = x_b;  comparison.model2D(k).x_mid = x_m;
     comparison.model2D(k).T = r.T_air_seg(:, col(k))';  comparison.model2D(k).P = r.P_air_seg(:, col(k))';
     comparison.model2D(k).h = r.h_air_seg(:, col(k))';  comparison.model2D(k).Nu = r.Nu_air_seg(:, col(k))';
-    comparison.model2D(k).v = r.v_channel_seg(:, col(k))';  comparison.model2D(k).mdot = mdot_model;
+    comparison.model2D(k).v = r.v_air_seg(:, col(k))';  comparison.model2D(k).mdot = mdot_model;
 end
 
-% Lumped model: straight lines inlet -> outlet (no position resolution)
-if ~isempty(lumped)
-    xL = [0 lumped.L_solution]*1000;
-    argsL = {'-', 'Color', [0 0 0], 'LineWidth', 1.5, 'Marker', 's', 'MarkerFaceColor', [0 0 0], 'MarkerSize', 6, ...
-             'DisplayName', sprintf('Lumped model (L=%.3fm)', lumped.L_solution)};
-    plot(fig_T.ax,  xL, [lumped.T3 lumped.T4], argsL{:});
-    plot(fig_P.ax,  xL, [lumped.P3 lumped.P4], argsL{:});
-    plot(fig_h.ax,  xL, [lumped.h_air lumped.h_air], argsL{:});
-    plot(fig_v.ax,  xL, [lumped.v_channel_air lumped.v_channel_air], argsL{:});
-    plot(fig_Nu.ax, xL, [lumped.Nu_air lumped.Nu_air], argsL{:});
+% Lumped models: straight lines inlet -> outlet (no position resolution); one per entry
+L_cols = [0 0 0; 0.55 0.27 0.07; 0.35 0.35 0.35];
+L_ls   = {'-', '--', ':'};
+L_mk   = {'s', '^', 'd'};
+for iL = 1:numel(lumped)
+    lum = lumped{iL};
+    xL = [0 lum.L_solution]*1000;
+    if iL <= numel(lumped_names), nm = lumped_names{iL}; else, nm = 'Lumped model'; end
+    colL = L_cols(mod(iL-1, size(L_cols,1)) + 1, :);
+    argsL = {L_ls{mod(iL-1, numel(L_ls)) + 1}, 'Color', colL, 'LineWidth', 1.5, ...
+             'Marker', L_mk{mod(iL-1, numel(L_mk)) + 1}, 'MarkerFaceColor', colL, 'MarkerSize', 6, ...
+             'DisplayName', sprintf('%s (L=%.3fm)', nm, lum.L_solution)};
+    plot(fig_T.ax,  xL, [lum.T3 lum.T4], argsL{:});
+    % Channel pressure, like the discretised models and the CFD: starts after the entrance loss
+    % (P3 - inlet_dp) and ends before the exit pressure rise (P4 - outlet_dp, since
+    % P4 = P3 - friction - inlet_dp + outlet_dp).
+    in_dp  = 0;  out_dp = 0;
+    if isfield(lum, 'inlet_dp')  && isfinite(lum.inlet_dp),  in_dp  = lum.inlet_dp;  end
+    if isfield(lum, 'outlet_dp') && isfinite(lum.outlet_dp), out_dp = lum.outlet_dp; end
+    P_ch = [lum.P3 - in_dp, lum.P4 - out_dp];
+    plot(fig_P.ax,  xL, P_ch, argsL{:});
+    plot(fig_h.ax,  xL, [lum.h_air lum.h_air], argsL{:});
+    plot(fig_v.ax,  xL, [lum.v_channel_air lum.v_channel_air], argsL{:});
+    plot(fig_Nu.ax, xL, [lum.Nu_air lum.Nu_air], argsL{:});
     if has_rho
-        plot(fig_rho.ax, xL, [rho_air(lumped.P3, lumped.T3) rho_air(lumped.P4, lumped.T4)], argsL{:});
+        plot(fig_rho.ax, xL, [rho_air(P_ch(1), lum.T3) rho_air(P_ch(2), lum.T4)], argsL{:});
     end
-    if isfield(lumped, 'Q_pred_solution')
-        plot(fig_Q.ax, xL, cumulative_heat_transfer(lumped, xL/1000, 'N_fin_air', N_fin_ref, 'N_air_pass', N_pass_ref), argsL{:});
+    if isfield(lum, 'Q_pred_solution')
+        plot(fig_Q.ax, xL, cumulative_heat_transfer(lum, xL/1000, 'N_fin_air', N_fin_ref, 'N_air_pass', N_pass_ref), argsL{:});
     end
-    if has_Re && isfield(lumped, 'Re_air')
-        plot(fig_Re.ax, xL, [lumped.Re_air lumped.Re_air], argsL{:});
+    if has_Re && isfield(lum, 'Re_air')
+        plot(fig_Re.ax, xL, [lum.Re_air lum.Re_air], argsL{:});
     end
-    if has_cf && isfield(lumped, 'f_air')
-        plot(fig_cf.ax, xL, [lumped.f_air lumped.f_air], argsL{:});
+    if has_cf && isfield(lum, 'f_air')
+        plot(fig_cf.ax, xL, [lum.f_air lum.f_air], argsL{:});
     end
-    comparison.lumped = lumped;
 end
+comparison.lumped = lumped;
 
 for f = [fig_T fig_P fig_h fig_v fig_m fig_Nu fig_Q]
     legend_unique(f.ax);
 end
 if has_2d,  legend_unique(fig_Tw.ax); end
+legend_unique(fig_dTa.ax);
 if has_rho, legend_unique(fig_rho.ax); end
 if has_cf,  legend_unique(fig_cf.ax); end
 if has_Re,  legend_unique(fig_Re.ax); end
@@ -423,7 +462,7 @@ if ~isempty(cfd_cool) || ~isempty(cfd_ends)
     if ~isempty(cfd_ends) && numel(cfd_ends) ~= n_cfd
         error('compare_cfd_meshes_vs_2d:coolCount', 'cfd_coolant_ends has %d entries but %d air-side CFD cases were given.', numel(cfd_ends), n_cfd);
     end
-    comparison.coolant = plot_coolant_hx(cfd_cool, cfd_ends, cfd_labels, res2D, lab2D, is1d, sty2D, col, grey, mk_cfd, lw, ms);
+    comparison.coolant = plot_coolant_hx(cfd_cool, cfd_ends, cfd_labels, res2D, lab2D, is1d, sty2D, col, grey, mk_cfd, lw, ms, lumped, lumped_names);
 end
 
 end
@@ -441,7 +480,9 @@ end
 % coolant column l = col(k) (1 for the 1D model, which has a single column).
 %   cfd_c    : complete-flow coolant structs (process_wall_CFD_data), {} if not given
 %   cfd_ends : coolant inlet / outlet surface values per mesh (load_cfd_exports 4th output), {} if not given
-function out = plot_coolant_hx(cfd_c, cfd_ends, cfd_labels, res2D, lab2D, is1d, sty2D, col, grey, mk_cfd, lw, ms)
+%   lumped   : lumped results (cell), drawn as straight lines over the HX length: constant coolant
+%              v, h, Nu, Re, Cf, rho and mean T; coolant inlet / outlet T as constants (no pressure drop per column)
+function out = plot_coolant_hx(cfd_c, cfd_ends, cfd_labels, res2D, lab2D, is1d, sty2D, col, grey, mk_cfd, lw, ms, lumped, lumped_names)
 out = struct();
 have_c    = ~isempty(cfd_c);
 have_ends = ~isempty(cfd_ends) && any(~cellfun(@isempty, cfd_ends));
@@ -453,6 +494,12 @@ F = struct();
 if have_c
     F.T  = new_fig('Coolant Bulk Temperature: CFD vs model', xl, 'Coolant bulk temperature [K]', ...
         'Coolant bulk temperature (complete flow): CFD vs model column mean');
+    F.Tw = new_fig('Coolant Wall Temperature: CFD', xl, 'Coolant-side wall temperature [K]', ...
+        'Coolant-side wall temperature (CFD; the model has no separate coolant-side wall temperature)');
+    F.dT = new_fig('Coolant Bulk - Wall Temperature Difference: CFD', xl, 'T_{bulk} - T_{wall} [K]', ...
+        'Coolant-side bulk minus wall temperature (CFD)');
+    F.Q  = new_fig('Coolant Cumulative Heat Transfer: CFD vs model', xl, 'Cumulative coolant heat transfer per unit cell [W]', ...
+        'Cumulative coolant heat transfer (negative = heat lost by the coolant): CFD vs model');
     F.v  = new_fig('Coolant Velocity: CFD vs model', xl, 'Velocity [m/s]', 'Coolant velocity: CFD vs model');
     F.h  = new_fig('Coolant Heat Transfer Coefficient: CFD vs model', xl, 'h [W/m^2K]', 'Coolant heat transfer coefficient: CFD (q_{coolant}) vs model');
     F.Nu = new_fig('Coolant Nusselt Number: CFD vs model', xl, 'Nu [-]', 'Coolant Nusselt number: CFD (q_{coolant}) vs model');
@@ -473,10 +520,10 @@ if have_ends
     F.Tin  = new_fig('Coolant Inlet Temperature: CFD vs model wall temperature', xl, 'Coolant inlet temperature [K]', ...
         sprintf('Coolant inlet temperature: CFD inlet surface vs model coolant entering column %d (= model wall temperature)', l_title));
     F.Tout = new_fig('Coolant Outlet Temperature: CFD vs model', xl, 'Coolant outlet temperature [K]', ...
-        sprintf('Coolant outlet temperature: CFD outlet surface vs model coolant entering column %d (= leaving column %d)', l_title+1, l_title));
+        sprintf('Coolant outlet temperature after one cell width: CFD outlet surface vs models (scaled linearly to the cell width), from column %d', l_title));
     if any(cellfun(@(e) isstruct(e) && isfield(e, 'dP'), cfd_ends))
         F.dP = new_fig('Coolant Pressure Drop: CFD vs model', xl, 'Pressure drop [Pa]', ...
-            sprintf('Coolant pressure drop over one coolant column: CFD (inlet - outlet surface) vs model column %d', l_title));
+            sprintf('Coolant pressure drop over one cell width: CFD (inlet - outlet surface) vs models (scaled linearly), column %d', l_title));
     end
 end
 
@@ -487,6 +534,17 @@ for k = 1:n_cfd
     if have_c
         r = cfd_c{k};  x_all = -r.z*1000;  valid = ~r.is_entrance;  x_v = x_all(valid);
         plot(F.T.ax,  x_all, r.Tbulk, args{:});
+        plot(F.Tw.ax, x_all, r.Twall, args{:});
+        if isfield(r, 'mdot') && isfield(r, 'Tbulk')
+            % Cumulative energy balance on the coolant (local mdot and cp at each station) from the first station, signed so that the coolant loses heat
+            % (negative), whichever way it flows through the exported stations.
+            cp_c = arrayfun(@cp_EG_50_50, r.Tbulk(:));
+            md_c = abs(r.mdot(:));                      % local coolant mass flow at each station
+            E    = [0; cumsum(0.5*(md_c(1:end-1) + md_c(2:end)) .* 0.5.*(cp_c(1:end-1) + cp_c(2:end)) .* diff(r.Tbulk(:)))];
+            if E(end) > 0, E = -E; end
+            plot(F.Q.ax, x_all, E, args{:});
+        end
+        plot(F.dT.ax, x_all, r.Tbulk - r.Twall, args{:});
         plot(F.v.ax,  x_all, r.Vmag,  args{:});
         plot(F.h.ax,  x_v, r.h(valid),  args{:});
         plot(F.Nu.ax, x_v, r.Nu(valid), args{:});
@@ -507,6 +565,14 @@ end
 need = {'T_cool_seg', 'v_cool_seg', 'Re_cool_seg', 'h_cool_seg', 'd_h_coolant', 'dp_cool_seg'};
 for k = 1:numel(res2D)
     r = res2D{k};
+    if have_c && isfield(r, 'Q_seg_arr')
+        % Heat lost by the coolant = minus the heat gained by the air (same Q_seg), scaled to one cell
+        xq = linspace(0, r.L_solution, r.N_segments+1)*1000;
+        Qm = -cumulative_heat_transfer(r, xq'/1000, 'column', col(k))';
+        st = sty2D{k};
+        plot(F.Q.ax, xq, Qm, st.ls, 'Color', st.color, 'LineWidth', lw, 'Marker', st.marker, ...
+            'MarkerFaceColor', st.color, 'MarkerSize', ms, 'DisplayName', lab2D{k});
+    end
     if ~all(isfield(r, need)) || (is1d(k) && ~isfield(r, 'T_mean_h_arr'))
         warning('compare_cfd_meshes_vs_2d:noCoolantFields', ...
             '%s lacks saved coolant fields (%s) -- rerun it; its coolant curves are skipped.', lab2D{k}, strjoin(need(~isfield(r, need)), ', '));
@@ -527,20 +593,46 @@ for k = 1:numel(res2D)
     end
     dh  = r.d_h_coolant;
     Re  = r.Re_cool_seg(:, lk)';
-    f_D = (1 ./ (-1.8*log10((0.0015/dh)^1.11 + 6.9./Re))).^2;
     v   = r.v_cool_seg(:, lk)';
     h   = r.h_cool_seg(:, lk)';
-    Nu  = h*dh ./ arrayfun(@k_EG, T_ref);
+    % The model's own coolant friction factor (Darcy) and Nu when the result has them; results
+    % saved before they were stored fall back to the old formula / h*d_h/k.
+    if isfield(r, 'f_coolant_seg') && any(isfinite(r.f_coolant_seg(:)))
+        f_D = r.f_coolant_seg(:, lk)';
+    else
+        f_D = (1 ./ (-1.8*log10((0.0015/dh)^1.11 + 6.9./Re))).^2;
+    end
+    if isfield(r, 'Nu_cool_seg') && any(isfinite(r.Nu_cool_seg(:)))
+        Nu = r.Nu_cool_seg(:, lk)';
+    else
+        Nu = h*dh ./ arrayfun(@k_EG, T_ref);
+    end
     dpc = r.dp_cool_seg(:, lk)';
 
     st = sty2D{k};
     a_n = {st.ls, 'Color', st.color, 'LineWidth', lw, 'Marker', st.marker, 'MarkerFaceColor', st.color, 'MarkerSize', ms, 'DisplayName', lab2D{k}};
+    % Scale the column values linearly to one CFD cell (2 air channels = 2/N_fin_air of the HX width):
+    % a column is 1/N_cool of the width (N_cool = 1 for the 1D model), so factor = 2*N_cool/N_fin_air.
+    if isfield(r, 'N_fin_air')
+        N_c_k  = size(r.T_cool_seg, 2) - 1;
+        fac_k  = 2*N_c_k/r.N_fin_air;
+        if is1d(k)
+            T_leave = r.T_cool_seg(:, 2)';
+        else
+            T_leave = T_out;                        % coolant leaving column l
+        end
+        T_out = T_in - fac_k*(T_in - T_leave);
+        dpc   = dpc*fac_k;
+        T_mean = 0.5*(T_in + T_out);               % bulk T over one cell width: mean of inlet and scaled outlet
+    else
+        warning('compare_cfd_meshes_vs_2d:noNfin', '%s has no N_fin_air -- coolant outlet T / pressure drop not scaled to one cell.', lab2D{k});
+    end
     if isfield(F, 'Tin')
         a_i = a_n;  a_i{end} = sprintf('%s: entering column %d', lab2D{k}, lk);
         plot(F.Tin.ax, xm, T_in, a_i{:});
     end
-    if isfield(F, 'Tout') && ~is1d(k)
-        a_o = a_n;  a_o{end} = sprintf('%s: leaving column %d (= entering column %d)', lab2D{k}, lk, lk+1);
+    if isfield(F, 'Tout')
+        a_o = a_n;  a_o{end} = sprintf('%s: after one cell width from column %d', lab2D{k}, lk);
         plot(F.Tout.ax, xm, T_out, a_o{:});
     end
     if isfield(F, 'dP'), plot(F.dP.ax, xm, dpc, a_n{:}); end
@@ -556,6 +648,51 @@ for k = 1:numel(res2D)
     out.model(k).label = lab2D{k};  out.model(k).x_mid = xm;  out.model(k).column = lk;
     out.model(k).T_in = T_in;  out.model(k).T_out = T_out;  out.model(k).T_mean = T_mean;
     out.model(k).v = v;  out.model(k).h = h;  out.model(k).Nu = Nu;  out.model(k).Re = Re;  out.model(k).dP = dpc;
+end
+
+% ---- Lumped model: constant coolant values over the HX length ----
+L_cols = [0 0 0; 0.55 0.27 0.07; 0.35 0.35 0.35];
+L_ls   = {'-', '--', ':'};
+L_mk   = {'s', '^', 'd'};
+for iL = 1:numel(lumped)
+    lum = lumped{iL};
+    if ~all(isfield(lum, {'L_solution', 'T_h_i', 'T_h_o', 'T_mean_h'}))
+        warning('compare_cfd_meshes_vs_2d:noLumpedCoolant', 'Lumped result %d lacks coolant fields -- its coolant curves are skipped.', iL);
+        continue
+    end
+    xL = [0 lum.L_solution]*1000;
+    if iL <= numel(lumped_names), nm = lumped_names{iL}; else, nm = 'Lumped model'; end
+    colL = L_cols(mod(iL-1, size(L_cols,1)) + 1, :);
+    aL = {L_ls{mod(iL-1, numel(L_ls)) + 1}, 'Color', colL, 'LineWidth', 1.5, ...
+          'Marker', L_mk{mod(iL-1, numel(L_mk)) + 1}, 'MarkerFaceColor', colL, 'MarkerSize', 6, ...
+          'DisplayName', sprintf('%s (L=%.3fm)', nm, lum.L_solution)};
+    % Per-cell quantities (coolant inlet / outlet T, pressure drop): the lumped values are for the whole
+    % coolant path (the HX width), so they are scaled linearly to the width of one CFD cell,
+    % cell_channels/N_fin_air of the path (the same 2 channels per cell as in the heat transfer scaling).
+    if isfield(res2D{1}, 'N_fin_air')
+        frac = 2/res2D{1}.N_fin_air;                % N_cool = 1 for the lumped model
+        dTL  = lum.T_h_i - lum.T_h_o;
+        T_in_L  = lum.T_h_i;
+        T_out_L = lum.T_h_i - frac*dTL;
+        if have_c, plot(F.T.ax, xL, 0.5*(T_in_L + T_out_L)*[1 1], aL{:}); end
+        if isfield(F, 'Tin'),  plot(F.Tin.ax,  xL, [T_in_L T_in_L],   aL{:}); end
+        if isfield(F, 'Tout'), plot(F.Tout.ax, xL, [T_out_L T_out_L], aL{:}); end
+        if isfield(F, 'dP') && all(isfield(lum, {'f_coolant', 'v_channel_coolant', 'd_h_coolant', 'T_mean_h'})) && isfield(res2D{1}, 'b_hx')
+            dP_L = lum.f_coolant*(frac*res2D{1}.b_hx)*0.5*rho_EG(lum.T_mean_h)*lum.v_channel_coolant^2/lum.d_h_coolant;
+            plot(F.dP.ax, xL, [dP_L dP_L], aL{:});
+        end
+    end
+    if have_c && isfield(lum, 'Q_pred_solution')
+        plot(F.Q.ax, xL, -cumulative_heat_transfer(lum, xL/1000, 'N_fin_air', res2D{1}.N_fin_air, 'N_air_pass', res2D{1}.N_air_pass), aL{:});
+    end
+    if have_c
+        if isfield(lum, 'v_channel_coolant'), plot(F.v.ax,  xL, [1 1]*lum.v_channel_coolant, aL{:}); end
+        if isfield(lum, 'h_coolant'),         plot(F.h.ax,  xL, [1 1]*lum.h_coolant,         aL{:}); end
+        if isfield(lum, 'Nu_coolant'),        plot(F.Nu.ax, xL, [1 1]*lum.Nu_coolant,        aL{:}); end
+        if isfield(F, 'rho'), plot(F.rho.ax, xL, [1 1]*rho_EG(lum.T_mean_h), aL{:}); end
+        if isfield(F, 'Cf') && isfield(lum, 'f_coolant'), plot(F.Cf.ax, xL, [1 1]*lum.f_coolant/4, aL{:}); end
+        if isfield(F, 'Re') && isfield(lum, 'Re_coolant'), plot(F.Re.ax, xL, [1 1]*lum.Re_coolant, aL{:}); end
+    end
 end
 
 for fn = fieldnames(F)'
@@ -691,4 +828,9 @@ ch = ch(arrayfun(@(o) isprop(o, 'DisplayName') && ~isempty(o.DisplayName), ch));
 if isempty(ch), return, end
 [~, ia] = unique({ch.DisplayName}, 'stable');
 legend(ax, ch(ia), 'Location', 'best');
+end
+
+%% ---- Local helper: inline if ---- %%
+function out = ternary(cond, a, b)
+if cond, out = a; else, out = b; end
 end
